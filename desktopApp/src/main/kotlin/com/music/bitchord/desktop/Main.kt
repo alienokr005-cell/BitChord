@@ -163,6 +163,11 @@ private fun desktopMain() = application {
                 DesktopWindowBackdrop.apply()
             }
         }
+        LaunchedEffect(Unit) {
+            // Still up and drawing after a while: a good launch, so the next one needn't be safe.
+            androidx.compose.runtime.withFrameNanos { }
+            DesktopStability.markHealthy()
+        }
         val actions = remember {
             DesktopWindowActions(
                 minimize = {

@@ -32,13 +32,33 @@ internal enum class DesktopRenderer(val label: String, val skikoApi: String?) {
 internal object DesktopStability {
 
     private const val KEY_RENDERER = "renderer"
+    private const val KEY_LAUNCH_PENDING = "launch_pending"
+
+    /** How long a launch has to stay up before it counts as a good one. */
+    private const val HEALTHY_AFTER_MS = 20_000L
 
     private val _renderer = MutableStateFlow(load())
     /** The renderer that will be used from the next launch. */
     val renderer: StateFlow<DesktopRenderer> = _renderer
 
     /** The renderer this launch is actually using. */
-    val activeRenderer: DesktopRenderer = _renderer.value
+    var activeRenderer: DesktopRenderer = _renderer.value
+        private set
+
+    /**
+     * Whether this launch is the safe one after a launch that didn't last — blank, crashed or closed
+     * within moments of opening. Safe mode uses the automatic renderer and an opaque window, the
+     * combination least likely to go blank, so Settings can be reached to change things.
+     */
+    var safeMode: Boolean = false
+        private set
+
+    /**
+     * Whether the main window may be created see-through (for Mica/Acrylic) and the desktop card
+     * drawn in a see-through window. Only on the automatic renderer — Skia's OpenGL path can't draw
+     * into a transparent window on Windows, which shows as a blank one — and never in safe mode.
+     */
+    val transparencyAllowed: Boolean get() = !safeMode && activeRenderer == DesktopRenderer.AUTOMATIC
 
     private fun load(): DesktopRenderer {
         val saved = DesktopPersistence().string(KEY_RENDERER, DesktopRenderer.AUTOMATIC.name)
@@ -52,8 +72,18 @@ internal object DesktopStability {
 
     /** First thing in `main`, before any window or the graphics library loads. */
     fun installEarly() {
+        val persistence = DesktopPersistence()
+        // The last launch never got as far as [markHealthy]: start safe, back on the automatic renderer.
+        if (persistence.boolean(KEY_LAUNCH_PENDING, false)) {
+            safeMode = true
+            if (activeRenderer != DesktopRenderer.AUTOMATIC) setRenderer(DesktopRenderer.AUTOMATIC)
+            activeRenderer = DesktopRenderer.AUTOMATIC
+            DesktopTrackLog.log("last launch didn't last; starting in safe mode")
+        }
+        persistence.saveBoolean(KEY_LAUNCH_PENDING, true)
+        runCatching { persistence.preferences.flush() }
         activeRenderer.skikoApi?.let { System.setProperty("skiko.renderApi", it) }
-        DesktopTrackLog.log("renderer: ${activeRenderer.name}")
+        DesktopTrackLog.log("renderer: ${activeRenderer.name}, transparent window allowed: $transparencyAllowed")
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             DesktopTrackLog.log("uncaught on ${thread.name}: ${stackTrace(error)}")
@@ -71,7 +101,7 @@ internal object DesktopStability {
     }
 
     /**
-     * Redraws the window whenever it comes back — restored, refocused or moved to another
+     * Redraws the window whenever it comes back — restored from the taskbar or moved to another
      * monitor — which is when a lost GPU surface shows up as a blank window.
      */
     fun watch(window: Window) {
@@ -81,12 +111,20 @@ internal object DesktopStability {
         }
         window.addWindowListener(object : WindowAdapter() {
             override fun windowDeiconified(e: WindowEvent) = nudge()
-            override fun windowActivated(e: WindowEvent) = nudge()
         })
         window.addPropertyChangeListener("graphicsConfiguration") {
             DesktopTrackLog.log("window moved to another display; redrawing")
             nudge()
         }
+    }
+
+    /** From the main window, once it is up: counts this launch as a good one after a while. */
+    suspend fun markHealthy() {
+        kotlinx.coroutines.delay(HEALTHY_AFTER_MS)
+        val persistence = DesktopPersistence()
+        persistence.saveBoolean(KEY_LAUNCH_PENDING, false)
+        runCatching { persistence.preferences.flush() }
+        DesktopTrackLog.log("launch healthy")
     }
 
     /** Bumped to rebuild the main window after a crash in it. */

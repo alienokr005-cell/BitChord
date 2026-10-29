@@ -148,6 +148,9 @@ internal object DesktopTrackToast {
             TrackCardPlacement.IN_APP -> if (DesktopWindowVisibility.inFront()) Target.IN_APP else Target.SCREEN
         }
         if (wanted == Target.SCREEN) {
+            // The desktop card is a see-through window; where those can't be drawn (OpenGL,
+            // Compatibility, safe mode) it would be a black box, so it stays inside the app.
+            if (!DesktopStability.transparencyAllowed) return null
             // Over borderless full-screen games if the listener wants it; never over exclusive
             // full screen, where it can't show; see [DesktopFullscreenApps].
             when (DesktopFullscreenApps.state()) {
@@ -205,6 +208,10 @@ internal fun DesktopTrackToastWindow(onOpen: () -> Unit) {
     val corner by DesktopTrackCardSettings.corner.collectAsState()
     if (placement == TrackCardPlacement.OFF) return
     val shown = announcement?.takeIf { it.target == DesktopTrackToast.Target.SCREEN }
+    // Not created at launch: only once a card first needs the desktop, then kept for the next.
+    var needed by remember { mutableStateOf(false) }
+    LaunchedEffect(shown != null) { if (shown != null) needed = true }
+    if (!needed) return
 
     Window(
         visible = shown != null,
