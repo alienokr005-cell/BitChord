@@ -48,16 +48,24 @@ internal object DesktopTrackCardSettings {
     private val _corner = load(KEY_CORNER, TrackCardCorner.BOTTOM_RIGHT)
     private val _style = load(KEY_STYLE, TrackCardStyle.GLOSSY)
     private val _duration = load(KEY_DURATION, TrackCardDuration.NORMAL)
+    private val _overGames = MutableStateFlow(persistence.boolean(KEY_OVER_GAMES, true))
 
     val placement: StateFlow<TrackCardPlacement> = _placement
     val corner: StateFlow<TrackCardCorner> = _corner
     val style: StateFlow<TrackCardStyle> = _style
     val duration: StateFlow<TrackCardDuration> = _duration
 
+    /** Whether the desktop card shows over full-screen games (borderless/windowed full screen). */
+    val overGames: StateFlow<Boolean> = _overGames
+
     fun setPlacement(value: TrackCardPlacement) = save(KEY_PLACEMENT, value, _placement)
     fun setCorner(value: TrackCardCorner) = save(KEY_CORNER, value, _corner)
     fun setStyle(value: TrackCardStyle) = save(KEY_STYLE, value, _style)
     fun setDuration(value: TrackCardDuration) = save(KEY_DURATION, value, _duration)
+    fun setOverGames(value: Boolean) {
+        persistence.saveBoolean(KEY_OVER_GAMES, value)
+        _overGames.value = value
+    }
 
     private fun <E : Enum<E>> save(key: String, value: E, into: MutableStateFlow<E>) {
         persistence.saveString(key, value.name)
@@ -68,4 +76,5 @@ internal object DesktopTrackCardSettings {
     private const val KEY_CORNER = "track_card_corner"
     private const val KEY_STYLE = "track_card_style"
     private const val KEY_DURATION = "track_card_duration"
+    private const val KEY_OVER_GAMES = "track_card_over_games"
 }

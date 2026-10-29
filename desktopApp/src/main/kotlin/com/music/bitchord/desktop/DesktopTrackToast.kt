@@ -77,8 +77,13 @@ internal object DesktopTrackToast {
         lastVideoId = song.videoId
         when (DesktopTrackCardSettings.placement.value) {
             TrackCardPlacement.OFF -> return
-            // Never over a full-screen game or video; see [DesktopFullscreenApps].
-            TrackCardPlacement.SCREEN -> if (DesktopFullscreenApps.active()) return
+            // Over borderless full-screen games if the listener wants it; never over exclusive
+            // full screen, where it can't show; see [DesktopFullscreenApps].
+            TrackCardPlacement.SCREEN -> when (DesktopFullscreenApps.state()) {
+                DesktopFullscreenApps.State.NONE -> Unit
+                DesktopFullscreenApps.State.BORDERLESS -> if (!DesktopTrackCardSettings.overGames.value) return
+                DesktopFullscreenApps.State.EXCLUSIVE -> return
+            }
             TrackCardPlacement.IN_APP -> Unit
         }
         current.value = Announcement(song, ++serial)
@@ -158,7 +163,8 @@ internal fun DesktopTrackToastWindow(onOpen: () -> Unit) {
             TrackCardPresenter(
                 announcement = announcement,
                 corner = corner,
-                onClick = onOpen,
+                // Mid-game, a stray click on the card shouldn't pull BitChord over the game.
+                onClick = { if (!DesktopFullscreenApps.active()) onOpen() },
                 modifier = Modifier.align(Alignment.Center),
             )
         }

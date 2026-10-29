@@ -8168,6 +8168,15 @@ private fun NowPlayingCardSettings() {
                 "Glossy has a polished sheen; Artwork glass is tinted by the song's cover",
                 TrackCardStyle.entries, style, { it.label }, DesktopTrackCardSettings::setStyle,
             )
+            if (placement == TrackCardPlacement.SCREEN) {
+                val overGames by DesktopTrackCardSettings.overGames.collectAsState()
+                SettingsToggle(
+                    "Show over full-screen games",
+                    "Works in borderless or windowed full screen. Exclusive full screen can't show it",
+                    overGames,
+                    DesktopTrackCardSettings::setOverGames,
+                )
+            }
             SettingsChoiceRow(
                 "Show for",
                 "How long the card stays before it slides away",
