@@ -499,6 +499,8 @@ compose.desktop {
         mainClass = composeMainClass
         jvmArgs("-Xmx1024m")
         jvmArgs("-XX:+UseG1GC", "-XX:G1PeriodicGCInterval=20000", "-XX:G1PeriodicGCSystemLoadThreshold=0")
+        // Shrink the heap back after a spike instead of keeping it: memory goes back to Windows (and to games).
+        jvmArgs("-XX:MinHeapFreeRatio=10", "-XX:MaxHeapFreeRatio=25")
         jvmArgs("-Dbitchord.version=$appVersion")
         if (desktopModuleIndexUrl.isNotBlank()) {
             jvmArgs("-Dbitchord.module.index=$desktopModuleIndexUrl")

@@ -2,7 +2,6 @@ package com.music.bitchord.desktop
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -15,7 +14,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -32,10 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -54,6 +49,7 @@ import java.awt.Toolkit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -79,7 +75,12 @@ internal object DesktopTrackToast {
         if (song == null || !isPlaying) return
         if (song.videoId == lastVideoId) return
         lastVideoId = song.videoId
-        if (DesktopTrackCardSettings.placement.value == TrackCardPlacement.OFF) return
+        when (DesktopTrackCardSettings.placement.value) {
+            TrackCardPlacement.OFF -> return
+            // Never over a full-screen game or video; see [DesktopFullscreenApps].
+            TrackCardPlacement.SCREEN -> if (DesktopFullscreenApps.active()) return
+            TrackCardPlacement.IN_APP -> Unit
+        }
         current.value = Announcement(song, ++serial)
     }
 
@@ -169,7 +170,8 @@ internal fun DesktopTrackToastWindow(onOpen: () -> Unit) {
  *
  * Every frame of the slide is a `graphicsLayer` transform read in the draw phase: no
  * recomposition and no layout per frame, so the card moves at whatever rate the display refreshes —
- * 144 Hz on a 144 Hz monitor — rather than at the pace of the UI's work.
+ * 144 Hz on a 144 Hz monitor — rather than at the pace of the UI's work. Between the slides
+ * nothing animates, so a card sitting on screen costs no frames at all.
  */
 @Composable
 private fun TrackCardPresenter(
@@ -182,7 +184,6 @@ private fun TrackCardPresenter(
     val duration by DesktopTrackCardSettings.duration.collectAsState()
     val reduceAnimation by DesktopAppearanceSettings.reduceAnimation.collectAsState()
     val appear = remember { Animatable(0f) }
-    val countdown = remember { Animatable(0f) }
     var shown by remember { mutableStateOf<DesktopTrackToast.Announcement?>(null) }
     val scope = rememberCoroutineScope()
 
@@ -195,9 +196,9 @@ private fun TrackCardPresenter(
     LaunchedEffect(announcement?.serial) {
         val next = announcement ?: return@LaunchedEffect
         shown = next
-        countdown.snapTo(0f)
-        launch { appear.animateTo(1f, tween(if (reduceAnimation) 150 else ENTER_MS, easing = EnterEasing)) }
-        countdown.animateTo(1f, tween(duration.millis.toInt(), easing = LinearEasing))
+        appear.animateTo(1f, tween(if (reduceAnimation) 150 else ENTER_MS, easing = EnterEasing))
+        // Held still with a timer, not an animation: no frames are drawn while the card just sits.
+        delay(duration.millis)
         leave()
     }
 
@@ -205,7 +206,6 @@ private fun TrackCardPresenter(
     TrackCard(
         song = song,
         style = style,
-        countdown = { countdown.value },
         onClick = {
             onClick()
             scope.launch { leave() }
@@ -232,7 +232,6 @@ private fun TrackCardPresenter(
 internal fun TrackCard(
     song: Song,
     style: TrackCardStyle,
-    countdown: () -> Float,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -306,17 +305,6 @@ internal fun TrackCard(
                 Text(song.artist, color = secondary, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        // How long is left, as a hairline along the bottom. Drawn, not laid out, every frame.
-        Box(
-            Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth()
-                .height(2.dp)
-                .drawBehind {
-                    val left = (1f - countdown()).coerceIn(0f, 1f)
-                    drawRect(accent.copy(alpha = 0.85f), Offset.Zero, Size(size.width * left, size.height))
-                },
-        )
         // A thin edge: brighter at the top for the glossy styles, catching the light.
         Box(
             Modifier.matchParentSize().border(

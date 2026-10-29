@@ -34,7 +34,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          version="1.8.33"
+          version="1.8.34"
           echo "value=$version" >> "$GITHUB_OUTPUT"
           echo "Building $version"
 
