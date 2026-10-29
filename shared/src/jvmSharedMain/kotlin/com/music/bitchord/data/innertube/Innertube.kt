@@ -91,7 +91,7 @@ object Innertube {
      * version moves every few days, and the one that matters is the one
      * [webRemixVersion] reports.
      */
-    private const val WEB_REMIX_VERSION = "1.20250101.01.00"
+    private const val WEB_REMIX_VERSION = "1.20260707.12.00"
     private const val WEB_REMIX_CLIENT_ID = "67"
 
     private const val TAG = "BitChord"

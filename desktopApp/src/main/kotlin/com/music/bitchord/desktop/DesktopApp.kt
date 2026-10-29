@@ -5756,7 +5756,7 @@ private fun DesktopLibrarySongContent(
         ) {
             gridItems(songs, key = Song::videoId) { song ->
                 Column(Modifier.fillMaxWidth().clickable { onSongClick(song) }) {
-                    DesktopArtwork(song.thumbnailUrl, Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(12.dp)))
+                    DesktopArtwork(song.thumbnailUrl, Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(12.dp)), px = CARD_ART_PX)
                     Spacer(Modifier.height(7.dp))
                     Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
                     Text(song.artist, color = DesktopSecondary, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -5803,7 +5803,7 @@ private fun DesktopLibraryGroupingContent(
         ) {
             gridItems(groups, key = { it.key }) { group ->
                 Column(Modifier.fillMaxWidth().clickable { onGroupClick(group.key to group.value) }) {
-                    DesktopArtwork(group.value.firstOrNull()?.thumbnailUrl, Modifier.fillMaxWidth().height(150.dp).clip(CircleShape))
+                    DesktopArtwork(group.value.firstOrNull()?.thumbnailUrl, Modifier.fillMaxWidth().height(150.dp).clip(CircleShape), px = CARD_ART_PX)
                     Spacer(Modifier.height(7.dp))
                     Text(group.key, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
                     Text("${group.value.size} songs", color = DesktopSecondary, style = MaterialTheme.typography.bodySmall)
@@ -7035,6 +7035,7 @@ private fun DesktopCollectionPage(
                         DesktopArtwork(
                             collection.thumbnailUrl ?: songs.firstOrNull()?.thumbnailUrl,
                             Modifier.fillMaxSize(),
+                            px = HEADER_ART_PX,
                         )
                         albumCanvas?.let {
                             DesktopCanvasView(it.url, Modifier.fillMaxSize(), fallbackUrl = it.fallbackUrl)
@@ -7685,7 +7686,7 @@ private fun DesktopShelfCard(item: ShelfItem, onClick: (ShelfItem) -> Unit) {
                 .background(DesktopGlass)
                 .border(1.dp, Color.White.copy(alpha = 0.12f), shape),
         ) {
-            DesktopArtwork(item.thumbnailUrl, Modifier.fillMaxSize())
+            DesktopArtwork(item.thumbnailUrl, Modifier.fillMaxSize(), px = CARD_ART_PX)
         }
         Spacer(Modifier.height(8.dp))
         Text(item.title, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)

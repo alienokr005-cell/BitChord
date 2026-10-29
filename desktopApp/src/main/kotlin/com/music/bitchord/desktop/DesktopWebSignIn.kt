@@ -69,6 +69,27 @@ internal object DesktopWebSignIn {
 
     private const val SPOTIFY_COOKIE = "sp_dc"
 
+    /**
+     * JavaFX's user agent with its `JavaFX/<version>` token traded for Safari's `Version/`.
+     *
+     * Google refuses sign-in to anything that names itself an embedded browser — "This browser or
+     * app may not be secure" — and JavaFX's default agent does exactly that. Android's sign-in
+     * strips its WebView's `; wv` marker for the same reason (`browserUserAgent` there). The
+     * engine underneath is WebKit either way, so claiming to be WebKit's own browser keeps
+     * the page's feature detection honest.
+     */
+    internal fun browserUserAgent(platform: String?): String {
+        val base = platform?.takeIf { it.isNotBlank() } ?: return FALLBACK_SIGN_IN_UA
+        val stripped = base.replace(JAVAFX_TOKEN, " Version/17.6").replace(Regex("\\s{2,}"), " ").trim()
+        return if (stripped.contains("Safari/")) stripped else FALLBACK_SIGN_IN_UA
+    }
+
+    private val JAVAFX_TOKEN = Regex("""\s*JavaFX/\S+""")
+
+    private const val FALLBACK_SIGN_IN_UA =
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) " +
+            "Version/17.6 Safari/605.1.15"
+
     /** The cookies [service] would send, as a `Cookie` header value. */
     private fun cookies(service: Service): String = runCatching {
         CookieHandler.getDefault().get(URI(service.cookieUrl), emptyMap())["Cookie"].orEmpty().joinToString("; ")
@@ -131,6 +152,7 @@ internal object DesktopWebSignIn {
             val next = WebView().also { view = it }
             val engine = next.engine
             engine.userDataDirectory = folder.toFile()
+            engine.userAgent = browserUserAgent(engine.userAgent)
             engine.locationProperty().addListener { _, _, url -> where.text = hostOf(url) }
             engine.loadWorker.stateProperty().addListener { _, _, state ->
                 if (state == Worker.State.SUCCEEDED && view === next) onPage(engine.location.orEmpty())

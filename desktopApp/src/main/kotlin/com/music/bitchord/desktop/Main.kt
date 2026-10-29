@@ -30,6 +30,8 @@ fun main() {
     // Before any WebView exists, so the sign-in window can start over with an empty jar.
     DesktopWebCookies.install()
     DesktopWindowVisibility.install()
+    // Before the first image: sharp video covers, stepping down when a size is missing.
+    DesktopImageLoader.install()
     // The player is the phone's, from the shared UI module; this is what it reads underneath.
     PlayerPlatform.install(DesktopPlayerHost)
     com.music.bitchord.ui.AppUi.install(DesktopAppUiHost)

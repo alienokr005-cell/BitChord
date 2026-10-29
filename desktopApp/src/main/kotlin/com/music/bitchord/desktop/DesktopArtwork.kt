@@ -1,6 +1,7 @@
 package com.music.bitchord.desktop
 
 import com.music.bitchord.data.model.artworkAt
+import com.music.bitchord.data.model.youTubeThumbnailFallback
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -48,13 +49,23 @@ internal object DesktopArtworkCache {
     suspend fun load(url: String?): ImageBitmap? {
         if (url.isNullOrBlank()) return null
         images.get(url)?.let { return it }
-        return runCatching {
-            URI(url).toURL().openConnection().apply {
-                connectTimeout = 10_000
-                readTimeout = 10_000
-            }.getInputStream().use { stream -> stream.readBytes().decodeToImageBitmap() }
-        }.getOrNull()?.also { images.put(url, it) }
+        // A video's largest thumbnail doesn't always exist; step down a size until one does,
+        // as the Coil loader does — see [YouTubeThumbnailFallback].
+        var attempt: String? = YouTubeThumbnailFallback.resolve(url)
+        while (attempt != null) {
+            val current = attempt
+            val bitmap = runCatching { fetch(current) }.getOrNull()
+            if (bitmap != null) return bitmap.also { images.put(url, it) }
+            attempt = current.youTubeThumbnailFallback()?.also { YouTubeThumbnailFallback.markMissing(current) }
+        }
+        return null
     }
+
+    private fun fetch(url: String): ImageBitmap =
+        URI(url).toURL().openConnection().apply {
+            connectTimeout = 10_000
+            readTimeout = 10_000
+        }.getInputStream().use { stream -> stream.readBytes().decodeToImageBitmap() }
 }
 
 /** Artwork, fetched at the size the surface drawing it actually needs. */

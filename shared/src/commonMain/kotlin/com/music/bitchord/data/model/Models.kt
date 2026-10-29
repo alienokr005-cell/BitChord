@@ -296,6 +296,7 @@ fun String?.durationMillis(): Long {
 /** As [Song.artworkAt], for artwork that isn't a track's. */
 fun String?.artworkAt(px: Int): String? {
     if (this == null) return null
+    youTubeVideoThumbnailAt(this, px)?.let { return it }
     val sized = this.replace(SIZE_HINT, "w$px-h$px")
     return if (isGoogleImageHost(this)) {
         sized.replace(PARAM_SIZE_HINT, "=s$px")
@@ -314,6 +315,53 @@ private fun isGoogleImageHost(url: String): Boolean {
     return host == "ggpht.com" || host.endsWith(".ggpht.com") ||
         host == "googleusercontent.com" || host.endsWith(".googleusercontent.com")
 }
+
+/**
+ * A video's thumbnail (`i.ytimg.com/vi/<id>/<name>.jpg`) at the size [px] asks for.
+ *
+ * Video thumbnails carry no size hint for [artworkAt] to rewrite: YouTube Music hands a music
+ * video's row `hqdefault` or `sddefault` — 480×360 or 640×480, most of it letterbox — and the
+ * player, which asks for [PLAYER_ART_PX], used to draw that blown up to fill the screen. The
+ * sizes are fixed files instead, so the one that covers [px] is named outright. The query string
+ * (`sqp`, `rs`) is a signature over the file it came with and is dropped, since the bare path
+ * serves every size.
+ *
+ * `maxresdefault` doesn't exist for every video; [youTubeThumbnailFallback] names the next size
+ * down for a loader to try when it 404s.
+ */
+private fun youTubeVideoThumbnailAt(url: String, px: Int): String? {
+    val match = YTIMG_THUMBNAIL.matchEntire(url) ?: return null
+    val id = match.groupValues[1]
+    val name = when {
+        px <= 180 -> "mqdefault"
+        // hqdefault is the largest size every video is guaranteed to have, so anything that
+        // can't retry — Discord's presence, which only takes a URL — stays at or below it.
+        px <= 480 -> "hqdefault"
+        else -> "maxresdefault"
+    }
+    return "https://i.ytimg.com/vi/$id/$name.jpg"
+}
+
+/**
+ * The next smaller video thumbnail after [this] one failed to load, or null when there is none
+ * left to try (or [this] isn't a video thumbnail). `hqdefault` exists for every video, so the
+ * chain always ends on a picture.
+ */
+fun String.youTubeThumbnailFallback(): String? {
+    val match = YTIMG_THUMBNAIL.matchEntire(this) ?: return null
+    val id = match.groupValues[1]
+    val next = when (match.groupValues[2]) {
+        "maxresdefault", "hq720" -> "sddefault"
+        "sddefault" -> "hqdefault"
+        else -> return null
+    }
+    return "https://i.ytimg.com/vi/$id/$next.jpg"
+}
+
+private val YTIMG_THUMBNAIL = Regex(
+    """https?://i\d?\.ytimg\.com/vi(?:_webp)?/([A-Za-z0-9_-]{6,})/""" +
+        """(default|mqdefault|hqdefault|sddefault|maxresdefault|hq720)\.(?:jpg|webp)(?:\?.*)?""",
+)
 
 private val SIZE_HINT = Regex("""w\d+-h\d+""")
 private val PARAM_SIZE_HINT = Regex("""=s\d+""")
