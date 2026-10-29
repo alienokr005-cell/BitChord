@@ -2587,6 +2587,7 @@ fun BitChordDesktopApp() {
         val title = selectedSong?.let { "${it.title} — ${it.artist}" }
         tray.update(title = title, isPlaying = playback.isPlaying)
         DesktopTrayMenu.publish(title = title, playing = playback.isPlaying)
+        DesktopTrackToast.onTrack(selectedSong, playback.isPlaying)
     }
 
     LaunchedEffect(Unit) {

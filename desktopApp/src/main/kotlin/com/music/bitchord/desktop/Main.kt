@@ -185,6 +185,8 @@ private fun desktopMain() = application {
             BitChordDesktopApp()
         }
     }
+    // The small "Now playing" card at the screen's corner when the track changes.
+    DesktopTrackToastWindow(onOpen = DesktopWindowVisibility::show)
 }
 
 private const val MIN_WINDOW_WIDTH_DP = 900.0

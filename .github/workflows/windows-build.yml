@@ -49,8 +49,18 @@ jobs:
         run: .\gradlew.bat :shared:jvmTest :desktopUi:jvmTest :desktopApp:test "-Pbitchord.version=${{ steps.version.outputs.value }}"
 
       - name: Build msi, exe and the app image
+        shell: bash
         run: |
-          .\gradlew.bat :desktopApp:packageMsi :desktopApp:packageExe :desktopApp:createDistributable "-Pbitchord.version=${{ steps.version.outputs.value }}"
+          ./gradlew :desktopApp:packageMsi :desktopApp:packageExe :desktopApp:createDistributable "-Pbitchord.version=${{ steps.version.outputs.value }}" 2>&1 | tee build.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Report build errors
+        if: failure()
+        shell: bash
+        run: |
+          grep -E "^e: |error:|What went wrong|Exception" -A2 build.log | head -40 | while IFS= read -r line; do
+            echo "::error::${line//%/%25}"
+          done
 
       - name: The analyser and models are in the jar
         shell: bash
