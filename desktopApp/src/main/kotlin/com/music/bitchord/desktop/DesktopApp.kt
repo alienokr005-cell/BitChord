@@ -6416,6 +6416,12 @@ private fun DesktopSettingsScreen(
                     }
                 }
             }
+            if (section == DesktopSettingsSection.APPEARANCE) item {
+                NowPlayingCardSettings()
+            }
+            if (section == DesktopSettingsSection.APPEARANCE) item {
+                RendererSettings()
+            }
             if (section == DesktopSettingsSection.MISCELLANEOUS) item {
                 SettingsGroup(DesktopStrings["miscellaneous", "Miscellaneous"]) {
                     SettingsToggle(
@@ -8104,3 +8110,103 @@ private fun formatCollectionDuration(totalSeconds: Long): String {
 }
 
 private fun formatSleepTimer(ms: Long): String = formatTime(ms)
+
+/** A row of chips for one choice, under a title and subtitle, as the window-material row is. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun <T> SettingsChoiceRow(
+    title: String,
+    subtitle: String,
+    options: List<T>,
+    selected: T,
+    label: (T) -> String,
+    onSelect: (T) -> Unit,
+) {
+    if (!settingsRowVisible(title, subtitle)) return
+    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+        Text(title, fontWeight = FontWeight.Medium)
+        Text(subtitle, color = DesktopSecondary, style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.height(10.dp))
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            options.forEach { option ->
+                FilterChip(
+                    colors = desktopChipColors(),
+                    selected = option == selected,
+                    onClick = { onSelect(option) },
+                    label = { Text(label(option)) },
+                )
+            }
+        }
+    }
+}
+
+/** Settings → Appearance → Now playing card: where it shows, its corner, its look, how long. */
+@Composable
+private fun NowPlayingCardSettings() {
+    val placement by DesktopTrackCardSettings.placement.collectAsState()
+    val corner by DesktopTrackCardSettings.corner.collectAsState()
+    val style by DesktopTrackCardSettings.style.collectAsState()
+    val duration by DesktopTrackCardSettings.duration.collectAsState()
+    val nowPlaying = LocalNowPlaying.current
+    SettingsGroup("Now playing card") {
+        SettingsChoiceRow(
+            "Show the card",
+            "A small card with the song's name when the track changes",
+            TrackCardPlacement.entries, placement, { it.label }, DesktopTrackCardSettings::setPlacement,
+        )
+        if (placement != TrackCardPlacement.OFF) {
+            SettingsChoiceRow(
+                "Position",
+                if (placement == TrackCardPlacement.SCREEN) "Where on your screen it appears" else "Where in BitChord's window it appears",
+                TrackCardCorner.entries, corner, { it.label }, DesktopTrackCardSettings::setCorner,
+            )
+            SettingsChoiceRow(
+                "Style",
+                "Glossy has a polished sheen; Artwork glass is tinted by the song's cover",
+                TrackCardStyle.entries, style, { it.label }, DesktopTrackCardSettings::setStyle,
+            )
+            SettingsChoiceRow(
+                "Show for",
+                "How long the card stays before it slides away",
+                TrackCardDuration.entries, duration, { it.label }, DesktopTrackCardSettings::setDuration,
+            )
+            if (settingsRowVisible("Preview the card")) {
+                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Preview the card", fontWeight = FontWeight.Medium)
+                        Text(
+                            if (nowPlaying != null) "Shows it now with the current song" else "Play a song first",
+                            color = DesktopSecondary,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    TextButton(
+                        enabled = nowPlaying != null,
+                        onClick = { nowPlaying?.let(DesktopTrackToast::preview) },
+                    ) { Text("Preview") }
+                }
+            }
+        }
+    }
+}
+
+/** Settings → Appearance → Graphics: the renderer, for windows that go blank. */
+@Composable
+private fun RendererSettings() {
+    val renderer by DesktopStability.renderer.collectAsState()
+    SettingsGroup("Graphics") {
+        SettingsChoiceRow(
+            "Renderer",
+            buildString {
+                append("If BitChord's window sometimes goes blank, try OpenGL, then Compatibility. ")
+                append("Takes effect after restarting BitChord")
+                if (renderer != DesktopStability.activeRenderer) append(" (restart needed)")
+                append('.')
+            },
+            DesktopRenderer.entries, renderer, { it.label }, DesktopStability::setRenderer,
+        )
+    }
+}

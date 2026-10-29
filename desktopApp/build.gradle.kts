@@ -497,7 +497,7 @@ compose.desktop {
             it.metadata.installationPath.asFile.absolutePath
         }.get()
         mainClass = composeMainClass
-        jvmArgs("-Xmx512m")
+        jvmArgs("-Xmx1024m")
         jvmArgs("-XX:+UseG1GC", "-XX:G1PeriodicGCInterval=20000", "-XX:G1PeriodicGCSystemLoadThreshold=0")
         jvmArgs("-Dbitchord.version=$appVersion")
         if (desktopModuleIndexUrl.isNotBlank()) {

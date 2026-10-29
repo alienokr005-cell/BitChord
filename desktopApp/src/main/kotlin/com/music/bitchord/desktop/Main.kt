@@ -12,7 +12,13 @@ import com.music.bitchord.data.spotify.SpotifyLibrary
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.window.LocalWindowExceptionHandlerFactory
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -27,6 +33,8 @@ import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.painterResource
 
 fun main() {
+    // Before any window: the renderer choice, and crash logging that names what went wrong.
+    DesktopStability.installEarly()
     // Before any WebView exists, so the sign-in window can start over with an empty jar.
     DesktopWebCookies.install()
     DesktopWindowVisibility.install()
@@ -68,6 +76,7 @@ fun main() {
     desktopMain()
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 private fun desktopMain() = application {
     // Closing puts the window away rather than ending the process, while there is a tray icon to
     // bring it back from — see [DesktopWindowVisibility].
@@ -94,6 +103,9 @@ private fun desktopMain() = application {
             DesktopMacFrame.updateCornerRadius(maximized)
         }
     }
+    // Rebuilt, keeping its size and place, if its UI crashes — see [DesktopStability].
+    key(DesktopStability.windowGeneration.intValue) {
+    CompositionLocalProvider(LocalWindowExceptionHandlerFactory provides DesktopStability.exceptionHandlerFactory) {
     Window(
         onCloseRequest = { if (DesktopWindowVisibility.onCloseRequest()) exitApplication() },
         visible = visible,
@@ -113,6 +125,7 @@ private fun desktopMain() = application {
         val openingSize = remember { state.size }
         LaunchedEffect(composeWindow) {
             DesktopWindowVisibility.attachWindow(composeWindow)
+            DesktopStability.watch(composeWindow)
             // AWT's default is white, and it is what shows for the frame or two a moved or resized
             // window takes to repaint: a white band along its edges.
             // Not over a transparent window, whose clear background is what the material shows
@@ -182,10 +195,16 @@ private fun desktopMain() = application {
             LocalDesktopWindowActions provides actions,
             LocalDesktopWindowScope provides this,
         ) {
-            BitChordDesktopApp()
+            Box(Modifier.fillMaxSize()) {
+                BitChordDesktopApp()
+                // The "Now playing" card, over everything, when it is set to show inside the app.
+                DesktopTrackCardInApp()
+            }
         }
     }
-    // The small "Now playing" card at the screen's corner when the track changes.
+    }
+    }
+    // The "Now playing" card on the desktop, when it is set to show there.
     DesktopTrackToastWindow(onOpen = DesktopWindowVisibility::show)
 }
 
