@@ -30,6 +30,17 @@ internal object DesktopWindowVisibility {
     }
 
     /**
+     * Whether the main window is on screen and in front — open, not minimised, not in the tray,
+     * and the active window — so something drawn inside it would actually be seen.
+     */
+    fun inFront(): Boolean {
+        val win = windowRef?.get() ?: return false
+        if (!_visible.value || !win.isVisible) return false
+        if (win is Frame && (win.extendedState and Frame.ICONIFIED) != 0) return false
+        return win.isActive
+    }
+
+    /**
      * Installs system-level reopen hooks (e.g. macOS Dock click when window is closed).
      */
     fun install() {

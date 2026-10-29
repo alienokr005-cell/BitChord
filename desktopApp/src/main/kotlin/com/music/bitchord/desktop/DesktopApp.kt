@@ -1962,9 +1962,11 @@ fun BitChordDesktopApp() {
         DesktopPlayerSettings.setLyricsOffsetMs(0)
     }
 
-    LaunchedEffect(selectedSong?.videoId, animatedCanvas) {
+    // No canvas video behind a full-screen game; see [DesktopGameMode].
+    val gameMode by DesktopGameMode.active.collectAsState()
+    LaunchedEffect(selectedSong?.videoId, animatedCanvas, gameMode) {
         val current = selectedSong
-        if (current == null || !animatedCanvas) {
+        if (current == null || !animatedCanvas || gameMode) {
             canvas = null
             return@LaunchedEffect
         }
@@ -8202,11 +8204,25 @@ private fun NowPlayingCardSettings() {
     }
 }
 
-/** Settings → Appearance → Graphics: the renderer, for windows that go blank. */
+/** Settings → Appearance → Graphics: motion, game mode, and the renderer for windows that go blank. */
 @Composable
 private fun RendererSettings() {
     val renderer by DesktopStability.renderer.collectAsState()
+    val reduceAnimation by DesktopAppearanceSettings.reduceAnimation.collectAsState()
+    val gameMode by DesktopGameMode.enabled.collectAsState()
     SettingsGroup("Graphics") {
+        SettingsToggle(
+            "Reduce animation",
+            "Stills the player's drifting background and lyric motion, and simplifies the Now playing card",
+            reduceAnimation,
+            DesktopAppearanceSettings::setReduceAnimation,
+        )
+        SettingsToggle(
+            "Game mode",
+            "While a full-screen game runs, BitChord pauses its background motion, blur and canvas video so it doesn't take GPU time from the game",
+            gameMode,
+            DesktopGameMode::setEnabled,
+        )
         SettingsChoiceRow(
             "Renderer",
             buildString {

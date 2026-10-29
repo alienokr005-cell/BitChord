@@ -40,6 +40,8 @@ fun main() {
     DesktopWindowVisibility.install()
     // Before the first image: sharp video covers, stepping down when a size is missing.
     DesktopImageLoader.install()
+    // Steps BitChord's own drawing down while a full-screen game runs.
+    DesktopGameMode.install()
     // The player is the phone's, from the shared UI module; this is what it reads underneath.
     PlayerPlatform.install(DesktopPlayerHost)
     com.music.bitchord.ui.AppUi.install(DesktopAppUiHost)
