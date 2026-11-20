@@ -36,8 +36,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -165,11 +167,11 @@ internal object DesktopTrackToast {
     }
 }
 
-private const val CARD_WIDTH_DP = 340
-private const val CARD_HEIGHT_DP = 90
+private const val CARD_WIDTH_DP = 400
+private const val CARD_HEIGHT_DP = 120
 
 /** The bar's light blue-grey, as on the card this one is modelled on. */
-private val ClassicBar = Color(0xFFA0B2D1)
+private val ClassicBar = Color(0xFFA8B8D8)
 
 /** How far the card travels on its way in, from the edge it belongs to. */
 private const val TRAVEL_DP = 44f
@@ -312,10 +314,10 @@ private fun TrackCardPresenter(
 
 /**
  * The card itself, inside BitChord's window: the same card [DesktopTrackOverlay] draws on the
- * desktop — the square cover with the app's mark and name under it, the title, the artist, and a
- * progress bar between the elapsed and total time — on dark glass.
+ * desktop — dark acrylic with a glow of the cover's colour, the square cover with the app's mark
+ * and name under it, the title, the artist, and a progress bar between the elapsed and total time.
  *
- * [TrackCardStyle.ALBUM] fills the bar with the cover's own colour; [TrackCardStyle.CLASSIC] keeps it blue-grey.
+ * [TrackCardStyle.ALBUM] fills the bar with the cover's own colour; [TrackCardStyle.CLASSIC] keeps it periwinkle.
  */
 @Composable
 private fun TrackCard(
@@ -327,15 +329,31 @@ private fun TrackCard(
     modifier: Modifier = Modifier,
 ) {
     val song = announcement.song
-    val shape = RoundedCornerShape(12.dp)
-    val accent = announcement.accent.takeIf { style == TrackCardStyle.ALBUM } ?: ClassicBar
+    val shape = RoundedCornerShape(13.dp)
+    val bar = announcement.accent.takeIf { style == TrackCardStyle.ALBUM } ?: ClassicBar
+    val glow = announcement.accent
 
     Box(
         modifier
             .size(CARD_WIDTH_DP.dp, CARD_HEIGHT_DP.dp)
-            .shadow(16.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
+            .shadow(18.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
             .clip(shape)
-            .background(Color(0xEB1A202C))
+            .background(Color(0xF01C1C1C))
+            // The cover's colour bleeding into the glass from the left.
+            .drawBehind {
+                if (glow != null) {
+                    drawRect(
+                        Brush.radialGradient(
+                            0f to glow.copy(alpha = 0.33f),
+                            0.45f to glow.copy(alpha = 0.14f),
+                            1f to Color.Transparent,
+                            center = Offset(52.dp.toPx(), size.height / 2f),
+                            radius = size.width * 0.62f,
+                        ),
+                    )
+                }
+            }
+            .border(1.dp, Color.White.copy(alpha = 0.08f), shape)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -344,8 +362,8 @@ private fun TrackCard(
     ) {
         Column(
             Modifier
-                .padding(start = 21.dp, top = 9.dp)
-                .width(55.dp)
+                .padding(start = 16.dp, top = 14.dp)
+                .width(72.dp)
                 .graphicsLayer {
                     val c = cover()
                     alpha = c.coerceIn(0f, 1f)
@@ -357,45 +375,45 @@ private fun TrackCard(
         ) {
             Box(
                 Modifier
-                    .size(55.dp)
-                    .clip(RoundedCornerShape(3.dp))
-                    .background(Color(0xFF3A3E48)),
+                    .size(72.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0xFF3A3A3C)),
             ) {
                 announcement.art?.let {
                     Image(it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
                 }
             }
-            Spacer(Modifier.height(5.dp))
+            Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(13.dp).clip(RoundedCornerShape(50)).background(Color.White), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(14.dp).clip(RoundedCornerShape(50)).background(Color.White), contentAlignment = Alignment.Center) {
                     Image(
                         painterResource(Res.drawable.logo_mark),
                         contentDescription = null,
-                        colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color(0xFF1A202C)),
-                        modifier = Modifier.size(8.dp, 5.5.dp),
+                        colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color(0xFF1C1C1C)),
+                        modifier = Modifier.size(8.5.dp, 6.dp),
                     )
                 }
-                Spacer(Modifier.width(4.dp))
-                Text("BitChord", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                Spacer(Modifier.width(5.dp))
+                Text("BitChord", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
             }
         }
-        Column(Modifier.padding(start = 105.dp, top = 17.dp, end = 10.dp)) {
+        Column(Modifier.padding(start = 104.dp, top = 22.dp, end = 16.dp)) {
             StaggeredLine(words, 0f) {
                 Text(
                     song.title,
                     color = Color.White,
-                    fontSize = 15.sp,
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
             StaggeredLine(words, 0.12f) {
-                Text(song.artist, color = Color(0xFFA3A3A6), fontSize = 12.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(song.artist, color = Color(0xFFB3B3B3), fontSize = 13.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(9.dp))
             StaggeredLine(words, 0.24f) {
-                TrackProgress(song, accent)
+                TrackProgress(song, bar)
             }
         }
     }
@@ -423,19 +441,19 @@ private fun TrackProgress(song: Song, accent: Color) {
         }
     }
     val fraction = if (durationMs > 0L) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
-    val timeColour = Color(0xFF9E9EA1)
+    val timeColour = Color(0xFF9E9E9E)
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(clock(positionMs), color = timeColour, fontSize = 11.sp)
-        Spacer(Modifier.width(8.dp))
-        Canvas(Modifier.weight(1f).height(5.dp)) {
+        Text(clock(positionMs), color = timeColour, fontSize = 11.5.sp)
+        Spacer(Modifier.width(10.dp))
+        Canvas(Modifier.weight(1f).height(4.dp)) {
             val r = CornerRadius(size.height / 2, size.height / 2)
-            drawRoundRect(Color.White.copy(alpha = 0.15f), cornerRadius = r)
+            drawRoundRect(Color.White.copy(alpha = 0.18f), cornerRadius = r)
             if (fraction > 0f) {
                 drawRoundRect(accent, size = Size(size.width * fraction, size.height), cornerRadius = r)
             }
         }
-        Spacer(Modifier.width(8.dp))
-        Text(if (durationMs > 0L) clock(durationMs) else "–:––", color = timeColour, fontSize = 11.sp)
+        Spacer(Modifier.width(10.dp))
+        Text(if (durationMs > 0L) clock(durationMs) else "–:––", color = timeColour, fontSize = 11.5.sp)
     }
 }
 

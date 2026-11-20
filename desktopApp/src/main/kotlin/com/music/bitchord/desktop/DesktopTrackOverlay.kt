@@ -49,8 +49,11 @@ import org.jetbrains.skia.svg.SVGDOM
  */
 internal object DesktopTrackOverlay {
 
-    private const val W = 340
-    private const val H = 90
+    private const val W = 400
+    private const val H = 120
+    private const val COVER_X = 16
+    private const val COVER_Y = 14
+    private const val COVER_S = 72
 
     /** Transparent room around the card for the slide in from the edge; clicks pass through it. */
     private const val PAD = 28
@@ -146,10 +149,10 @@ internal object DesktopTrackOverlay {
                     panel.inset = PAD
                 } else {
                     // No see-through windows on this system: a plain card, cut to shape.
-                    background = Color(26, 32, 44)
+                    background = Color(28, 28, 28)
                     setSize(W, H)
                     panel.inset = 0
-                    runCatching { shape = RoundRectangle2D.Double(0.0, 0.0, W.toDouble(), H.toDouble(), 24.0, 24.0) }
+                    runCatching { shape = RoundRectangle2D.Double(0.0, 0.0, W.toDouble(), H.toDouble(), 26.0, 26.0) }
                 }
                 contentPane = panel
                 DesktopTrackLog.log("now playing card: desktop window ready (see-through: $perPixel)")
@@ -244,24 +247,40 @@ internal object DesktopTrackOverlay {
         }
 
         private fun drawCard(g: Graphics2D, a: DesktopTrackToast.Announcement) {
-            // The glass: what's behind, heavily blurred, under a dark wash.
-            val card = RoundRectangle2D.Float(0f, 0f, W.toFloat(), H.toFloat(), 24f, 24f)
+            // Acrylic: the screen behind, blurred, under a dark tint, with a soft glow of the
+            // cover's own colour bleeding in from the left.
+            val card = RoundRectangle2D.Float(0f, 0f, W.toFloat(), H.toFloat(), 26f, 26f)
             val outer = g.clip
             g.clip(card)
             val glass = backdrop
             if (glass != null) {
                 g.drawImage(glass, 0, 0, W, H, null)
-                g.color = Color(0, 0, 0, 112)
+                g.color = Color(28, 28, 28, 184) // rgba(28, 28, 28, 0.72)
             } else {
-                g.color = Color(26, 32, 44, 236)
+                g.color = Color(28, 28, 28, 240)
             }
             g.fill(card)
+            a.accent?.let { glow ->
+                val c = Color(glow.toArgb(), true)
+                g.paint = java.awt.RadialGradientPaint(
+                    java.awt.geom.Point2D.Float(COVER_X + COVER_S / 2f, H / 2f),
+                    W * 0.62f,
+                    floatArrayOf(0f, 0.45f, 1f),
+                    arrayOf(
+                        Color(c.red, c.green, c.blue, 84), // ~0.33
+                        Color(c.red, c.green, c.blue, 36),
+                        Color(c.red, c.green, c.blue, 0),
+                    ),
+                )
+                g.fill(card)
+            }
+            // A hairline catching the light along the top, as acrylic surfaces have.
+            g.paint = java.awt.GradientPaint(0f, 0f, Color(255, 255, 255, 30), 0f, H.toFloat(), Color(255, 255, 255, 8))
+            g.stroke = BasicStroke(1f)
+            g.draw(RoundRectangle2D.Float(0.5f, 0.5f, W - 1f, H - 1f, 26f, 26f))
 
             // The cover, square, with the app's mark and name centred under it.
-            val coverX = 21
-            val coverY = 9
-            val coverS = 55
-            val coverClip = RoundRectangle2D.Float(coverX.toFloat(), coverY.toFloat(), coverS.toFloat(), coverS.toFloat(), 6f, 6f)
+            val coverClip = RoundRectangle2D.Float(COVER_X.toFloat(), COVER_Y.toFloat(), COVER_S.toFloat(), COVER_S.toFloat(), 8f, 8f)
             g.clip(coverClip)
             val image = cover
             val iw = image?.getWidth(null) ?: -1
@@ -270,61 +289,62 @@ internal object DesktopTrackOverlay {
                 val side = minOf(iw, ih)
                 val sx = (iw - side) / 2
                 val sy = (ih - side) / 2
-                g.drawImage(image, coverX, coverY, coverX + coverS, coverY + coverS, sx, sy, sx + side, sy + side, null)
+                g.drawImage(image, COVER_X, COVER_Y, COVER_X + COVER_S, COVER_Y + COVER_S, sx, sy, sx + side, sy + side, null)
             } else {
-                g.color = Color(58, 62, 72)
+                g.color = Color(58, 58, 60)
                 g.fill(coverClip)
             }
             g.clip = outer
             g.clip(card)
 
-            g.font = Font("Segoe UI", Font.BOLD, 11)
+            g.font = Font("Segoe UI", Font.BOLD, 12)
             val name = "BitChord"
-            val nameW = g.fontMetrics.stringWidth(name)
-            val iconS = 13
-            val rowW = iconS + 4 + nameW
-            val rowX = coverX + (coverS - rowW) / 2
-            val iconY = 69
+            val nameFm = g.fontMetrics
+            val nameW = nameFm.stringWidth(name)
+            val iconS = 14
+            val rowW = iconS + 5 + nameW
+            val rowX = COVER_X + (COVER_S - rowW) / 2
+            val rowTop = COVER_Y + COVER_S + 6
             val icon = logo
             if (icon != null) {
-                g.drawImage(icon, rowX, iconY, iconS, iconS, null)
+                g.drawImage(icon, rowX, rowTop, iconS, iconS, null)
             } else {
                 g.color = Color.WHITE
-                g.fillOval(rowX, iconY, iconS, iconS)
+                g.fillOval(rowX, rowTop, iconS, iconS)
             }
             g.color = Color.WHITE
-            g.drawString(name, rowX + iconS + 4, 80)
+            g.drawString(name, rowX + iconS + 5, rowTop + iconS / 2 + (nameFm.ascent - nameFm.descent) / 2)
 
             // Title, artist, and the progress row.
-            val textX = 105
-            val right = W - 10
-            g.font = Font("Segoe UI", Font.BOLD, 15)
+            val textX = COVER_X + COVER_S + 16
+            val right = W - 16
+            g.font = Font("Segoe UI", Font.BOLD, 17)
             g.color = Color.WHITE
-            g.drawString(fit(a.song.title, g.fontMetrics, right - textX), textX, 33)
-            g.font = Font("Segoe UI", Font.PLAIN, 12).deriveFont(12.5f)
-            g.color = Color(163, 163, 166)
-            g.drawString(fit(a.song.artist, g.fontMetrics, right - textX), textX, 51)
+            g.drawString(fit(a.song.title, g.fontMetrics, right - textX), textX, 40)
+            g.font = Font("Segoe UI", Font.PLAIN, 14).deriveFont(13.5f)
+            g.color = Color(0xB3, 0xB3, 0xB3)
+            g.drawString(fit(a.song.artist, g.fontMetrics, right - textX), textX, 61)
 
             val (position, duration) = progress(a)
-            g.font = Font("Segoe UI", Font.PLAIN, 11)
+            g.font = Font("Segoe UI", Font.PLAIN, 12).deriveFont(11.5f)
             val tfm = g.fontMetrics
             val elapsed = clock(position)
             val total = if (duration > 0L) clock(duration) else "–:––"
-            val rowY = 70
+            val rowY = 86
             val baseline = rowY + (tfm.ascent - tfm.descent) / 2
-            g.color = Color(158, 158, 161)
+            g.color = Color(0x9E, 0x9E, 0x9E)
             g.drawString(elapsed, textX, baseline)
             val totalW = tfm.stringWidth(total)
             g.drawString(total, right - totalW, baseline)
-            val barX = textX + tfm.stringWidth(elapsed) + 8
-            val barW = (right - totalW - 8) - barX
+            val barX = textX + tfm.stringWidth(elapsed) + 10
+            val barW = (right - totalW - 10) - barX
             if (barW > 10) {
-                g.color = Color(255, 255, 255, 38)
-                g.fill(RoundRectangle2D.Float(barX.toFloat(), rowY - 2.5f, barW.toFloat(), 5f, 5f, 5f))
+                g.color = Color(255, 255, 255, 46)
+                g.fill(RoundRectangle2D.Float(barX.toFloat(), rowY - 2f, barW.toFloat(), 4f, 4f, 4f))
                 val fraction = if (duration > 0L) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
                 if (fraction > 0f) {
                     g.color = barColour(a)
-                    g.fill(RoundRectangle2D.Float(barX.toFloat(), rowY - 2.5f, maxOf(5f, barW * fraction), 5f, 5f, 5f))
+                    g.fill(RoundRectangle2D.Float(barX.toFloat(), rowY - 2f, maxOf(4f, barW * fraction), 4f, 4f, 4f))
                 }
             }
             g.clip = outer
@@ -335,7 +355,7 @@ internal object DesktopTrackOverlay {
             return if (DesktopTrackCardSettings.style.value == TrackCardStyle.ALBUM && accent != null) {
                 Color(accent.toArgb(), true)
             } else {
-                Color(160, 178, 209)
+                Color(0xA8, 0xB8, 0xD8)
             }
         }
     }
@@ -368,9 +388,10 @@ internal object DesktopTrackOverlay {
      */
     private fun blurredScreen(area: java.awt.Rectangle): BufferedImage? = runCatching {
         val grab = java.awt.Robot().createScreenCapture(area)
-        // Down to a sixth, blurred there, and back up smoothly: a wide, soft blur for very little work.
-        val sw = maxOf(1, area.width / 6)
-        val sh = maxOf(1, area.height / 6)
+        // Down to an eighth, blurred there, and back up smoothly: about the 24px blur of Windows'
+        // acrylic, for very little work.
+        val sw = maxOf(1, area.width / 8)
+        val sh = maxOf(1, area.height / 8)
         var small = BufferedImage(sw, sh, BufferedImage.TYPE_INT_RGB)
         val down = small.createGraphics()
         down.drawImage(grab.getScaledInstance(sw, sh, Image.SCALE_AREA_AVERAGING), 0, 0, null)
