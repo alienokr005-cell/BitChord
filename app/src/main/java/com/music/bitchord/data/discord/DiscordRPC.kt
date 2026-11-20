@@ -24,10 +24,12 @@ import java.util.Locale
  *   Listening to BitChord          <- activityName, or the app's own name
  *   ┌────┐  Song title             <- details
  *   │art │  Artist                 <- state
- *   └────┘  Hi-Res Lossless · FLAC · 4608 kbps · 24-bit · 96 kHz
+ *   └───◉┘  Hi-Res Lossless · FLAC · 4608 kbps · 24-bit · 96 kHz
  *           ▁▁▁▁▁▁ 1:04 / 3:47     <- from the timestamps
  *   [ Listen on YouTube Music ]    <- button 1
  *   [ Visit BitChord           ]   <- button 2
+ *
+ *   ◉ is the BitChord badge: the small image, over the cover's corner.
  * ```
  */
 class DiscordRPC(
@@ -107,27 +109,32 @@ class DiscordRPC(
 
         val name = activityName.ifEmpty { appName() }
 
+        // Asked for at a size Discord's own card actually draws — the row
+        // thumbnail our lists use is 160px and reads soft blown up to the
+        // 96dp sleeve in a presence card.
+        //
+        // A track with no artwork — or with artwork Discord can't reach,
+        // which is anything that isn't an http URL — sends none, and Discord
+        // draws the BitChord application's own icon in its place.
+        val largeImage = song.artworkAt(ART_PX)
+            ?.takeIf { it.startsWith("http") }
+            ?.let(RpcImage::ExternalImage)
+
         setActivity(
             name = name,
             details = songTitleWithRate,
             state = song.artist,
             detailsUrl = watchUrl(song),
-            // Asked for at a size Discord's own card actually draws — the row
-            // thumbnail our lists use is 160px and reads soft blown up to the
-            // 96dp sleeve in a presence card.
-            //
-            // A track with no artwork — or with artwork Discord can't reach,
-            // which is anything that isn't an http URL — sends none, and Discord
-            // draws the BitChord application's own icon in its place.
-            largeImage = song.artworkAt(ART_PX)
-                ?.takeIf { it.startsWith("http") }
-                ?.let(RpcImage::ExternalImage),
-            smallImage = null,
+            largeImage = largeImage,
+            // The BitChord badge on the cover's corner, as Spotify's card has.
+            // Only over real artwork: with none, Discord already draws the
+            // app icon as the sleeve, and a badge would repeat it.
+            smallImage = largeImage?.let { RpcImage.ExternalImage(DiscordApplication.LOGO_URL) },
             // The card's optional third information line. Kept absent for
             // ordinary lossy streams so Discord only calls attention to a
             // measured premium format.
             largeText = audioQuality,
-            smallText = null,
+            smallText = largeImage?.let { DiscordApplication.LOGO_TEXT },
             buttons = if (buttonsList.isNotEmpty()) buttonsList else null,
             type = type,
             statusDisplayType = if (useDetails) StatusDisplayType.DETAILS else StatusDisplayType.STATE,

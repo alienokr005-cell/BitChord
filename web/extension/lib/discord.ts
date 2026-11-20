@@ -34,6 +34,8 @@ const PROJECT_URL = 'https://github.com/kushagrasinghx/BitChord';
 const DEFAULT_BUTTON_1 = 'Listen on YouTube Music';
 const DEFAULT_BUTTON_2 = 'Visit BitChord';
 const APP_NAME = 'BitChord';
+/** DiscordApplication.LOGO_URL: the square icon badged on the cover's corner. */
+const LOGO_URL = 'https://raw.githubusercontent.com/kushagrasinghx/BitChord/main/app/src/main/ic_launcher-playstore.png';
 
 const INITIAL_RECONNECT_MS = 1_000;
 const MAX_RECONNECT_MS = 60_000;
@@ -410,6 +412,8 @@ export async function buildPresence(token: string, track: DiscordNowPlaying, opt
   const art = track.artworkUrl?.startsWith('http') ? track.artworkUrl : null;
   // An unreachable mirror keeps the raw URL, as RpcImage.ExternalImage does.
   const largeImage = art ? ((await externalAsset(token, art)) ?? art) : null;
+  // Only over real artwork: with none, Discord draws the app icon as the sleeve already.
+  const smallImage = largeImage ? ((await externalAsset(token, LOGO_URL)) ?? LOGO_URL) : null;
   return {
     activities: [
       {
@@ -424,7 +428,7 @@ export async function buildPresence(token: string, track: DiscordNowPlaying, opt
           start: Math.round(now - track.positionMs / rate),
           end: Math.round(now + Math.max(0, track.durationMs - track.positionMs) / rate),
         },
-        assets: { large_image: largeImage, small_image: null, large_text: null, small_text: null },
+        assets: { large_image: largeImage, small_image: smallImage, large_text: null, small_text: smallImage ? APP_NAME : null },
         ...(buttons.length && {
           buttons: buttons.map(([label]) => label),
           metadata: { button_urls: buttons.map(([, url]) => url) },
