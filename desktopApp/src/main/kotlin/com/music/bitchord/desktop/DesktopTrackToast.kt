@@ -151,15 +151,20 @@ internal object DesktopTrackToast {
             TrackCardPlacement.IN_APP -> if (DesktopWindowVisibility.inFront()) Target.IN_APP else Target.SCREEN
         }
         if (wanted == Target.SCREEN) {
-            // The desktop card is a see-through window; where those can't be drawn (OpenGL,
-            // Compatibility, safe mode) it would be a black box, so it stays inside the app.
-            if (!DesktopStability.transparencyAllowed) return null
             // Over borderless full-screen games if the listener wants it; never over exclusive
-            // full screen, where it can't show; see [DesktopFullscreenApps].
+            // full screen, where it can't show; see [DesktopFullscreenApps]. Where see-through
+            // windows can't be drawn (OpenGL, Compatibility, safe mode) it still shows, in a plain
+            // window cut to the card's shape — see [DesktopTrackToastWindow].
             when (DesktopFullscreenApps.state()) {
                 DesktopFullscreenApps.State.NONE -> Unit
-                DesktopFullscreenApps.State.BORDERLESS -> if (!DesktopTrackCardSettings.overGames.value) return null
-                DesktopFullscreenApps.State.EXCLUSIVE -> return null
+                DesktopFullscreenApps.State.BORDERLESS -> if (!DesktopTrackCardSettings.overGames.value) {
+                    DesktopTrackLog.log("now playing card: skipped, a full-screen app is up and 'over games' is off")
+                    return null
+                }
+                DesktopFullscreenApps.State.EXCLUSIVE -> {
+                    DesktopTrackLog.log("now playing card: skipped, an exclusive full-screen game has the screen")
+                    return null
+                }
             }
         }
         return wanted
@@ -219,6 +224,10 @@ internal fun DesktopTrackToastWindow(onOpen: () -> Unit) {
     LaunchedEffect(shown != null) { if (shown != null) needed = true }
     if (!needed) return
 
+    // Fixed for the launch, as the renderer is. A see-through window gives the card its shadow and
+    // its slide in from the screen's edge; without one, a plain window the card's own size and
+    // shape, where it fades up in place.
+    val seeThrough = remember { DesktopStability.transparencyAllowed }
     Window(
         visible = shown != null,
         create = {
@@ -226,25 +235,45 @@ internal fun DesktopTrackToastWindow(onOpen: () -> Unit) {
                 // Set before the window is shown — AWT refuses these on a displayable window.
                 type = java.awt.Window.Type.UTILITY // no taskbar button
                 isUndecorated = true
-                isTransparent = true
-                background = java.awt.Color(0, 0, 0, 0)
                 isAlwaysOnTop = true
                 focusableWindowState = false
                 isResizable = false
                 title = "BitChord – Now playing"
-                val pad = SCREEN_WINDOW_PAD_DP * 2
-                size = java.awt.Dimension(CARD_WIDTH_DP + pad, CARD_HEIGHT_DP + pad)
+                if (seeThrough) {
+                    isTransparent = true
+                    background = java.awt.Color(0, 0, 0, 0)
+                    val pad = SCREEN_WINDOW_PAD_DP * 2
+                    size = java.awt.Dimension(CARD_WIDTH_DP + pad, CARD_HEIGHT_DP + pad)
+                } else {
+                    background = java.awt.Color(0x18, 0x18, 0x18)
+                    size = java.awt.Dimension(CARD_WIDTH_DP, CARD_HEIGHT_DP)
+                    // Rounded like the card; square corners are the fallback where shaping isn't offered.
+                    runCatching {
+                        shape = java.awt.geom.RoundRectangle2D.Double(
+                            0.0, 0.0, CARD_WIDTH_DP.toDouble(), CARD_HEIGHT_DP.toDouble(), 24.0, 24.0,
+                        )
+                    }
+                }
+                DesktopTrackLog.log("now playing card: desktop window created (see-through: $seeThrough)")
             }
         },
         dispose = ComposeWindow::dispose,
-        update = { window -> window.setLocation(screenLocation(corner)) },
+        update = { window ->
+            val at = screenLocation(corner)
+            if (seeThrough) {
+                window.setLocation(at)
+            } else {
+                window.setLocation(at.x + SCREEN_WINDOW_PAD_DP, at.y + SCREEN_WINDOW_PAD_DP)
+            }
+        },
     ) {
-        Box(Modifier.fillMaxSize().padding(SCREEN_WINDOW_PAD_DP.dp)) {
+        Box(Modifier.fillMaxSize().padding(if (seeThrough) SCREEN_WINDOW_PAD_DP.dp else 0.dp)) {
             TrackCardPresenter(
                 announcement = shown,
                 corner = corner,
                 // Mid-game, a stray click on the card shouldn't pull BitChord over the game.
                 onClick = { if (!DesktopFullscreenApps.active()) onOpen() },
+                inPlace = !seeThrough,
                 modifier = Modifier.align(Alignment.Center),
             )
         }
@@ -269,6 +298,8 @@ private fun TrackCardPresenter(
     corner: TrackCardCorner,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** In a window exactly the card's size: no slide or grow, which would cut it off at the edges. */
+    inPlace: Boolean = false,
 ) {
     val style by DesktopTrackCardSettings.style.collectAsState()
     val duration by DesktopTrackCardSettings.duration.collectAsState()
@@ -340,7 +371,7 @@ private fun TrackCardPresenter(
         modifier = modifier.graphicsLayer {
             val p = card.value
             alpha = p.coerceIn(0f, 1f)
-            if (!reduceAnimation) {
+            if (!reduceAnimation && !inPlace) {
                 val away = (1f - p) * travel * density
                 when (corner.horizontal) {
                     0 -> translationY = away * (if (corner.top) -1f else 1f)
