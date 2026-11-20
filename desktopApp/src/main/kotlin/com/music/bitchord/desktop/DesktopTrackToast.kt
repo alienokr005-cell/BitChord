@@ -171,7 +171,7 @@ private const val CARD_WIDTH_DP = 400
 private const val CARD_HEIGHT_DP = 120
 
 /** The bar's light blue-grey, as on the card this one is modelled on. */
-private val ClassicBar = Color(0xFFA8B8D8)
+private val ClassicBar = Color(0xFF9DB9DC)
 
 /** How far the card travels on its way in, from the edge it belongs to. */
 private const val TRAVEL_DP = 44f
@@ -338,7 +338,7 @@ private fun TrackCard(
             .size(CARD_WIDTH_DP.dp, CARD_HEIGHT_DP.dp)
             .shadow(18.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
             .clip(shape)
-            .background(Color(0xF01C1C1C))
+            .background(Color(0xF0050609))
             // The cover's colour bleeding into the glass from the left.
             .drawBehind {
                 if (glow != null) {

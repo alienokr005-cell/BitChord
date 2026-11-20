@@ -8169,7 +8169,7 @@ private fun NowPlayingCardSettings() {
             )
             SettingsChoiceRow(
                 "Style",
-                "Classic has a grey progress bar; Album colour fills it with the song's cover colour",
+                "Album colour tints the progress bar with the song's cover; Classic keeps it periwinkle",
                 TrackCardStyle.entries, style, { it.label }, DesktopTrackCardSettings::setStyle,
             )
             if (placement == TrackCardPlacement.SCREEN) {
@@ -8183,7 +8183,7 @@ private fun NowPlayingCardSettings() {
             }
             SettingsChoiceRow(
                 "Show for",
-                "How long the card stays before it slides away",
+                "How long the card stays before it slides away. Always keeps it up, like a game overlay",
                 TrackCardDuration.entries, duration, { it.label }, DesktopTrackCardSettings::setDuration,
             )
             if (settingsRowVisible("Preview the card")) {
