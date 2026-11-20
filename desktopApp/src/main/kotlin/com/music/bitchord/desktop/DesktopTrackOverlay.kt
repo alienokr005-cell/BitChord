@@ -50,7 +50,7 @@ import org.jetbrains.skia.svg.SVGDOM
 internal object DesktopTrackOverlay {
 
     private const val W = 340
-    private const val H = 84
+    private const val H = 90
 
     /** Transparent room around the card for the slide in from the edge; clicks pass through it. */
     private const val PAD = 28
@@ -64,6 +64,9 @@ internal object DesktopTrackOverlay {
 
     private var shown: DesktopTrackToast.Announcement? = null
     private var cover: Image? = null
+
+    /** What was on screen behind the card when it came in, blurred — the card's frosted glass. */
+    private var backdrop: BufferedImage? = null
     private var corner: TrackCardCorner = TrackCardCorner.BOTTOM_RIGHT
     private var onOpen: () -> Unit = {}
 
@@ -82,7 +85,9 @@ internal object DesktopTrackOverlay {
 
     init {
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
-            logo = runCatching { Res.readBytes("drawable/logo_mark.svg") }.getOrNull()?.let { rasterise(it, 45, 30) }
+            logo = runCatching { Res.readBytes("drawable/logo_mark.svg") }.getOrNull()
+                ?.let { rasterise(it, 60, 40) }
+                ?.let(::badgeIcon)
         }
     }
 
@@ -93,8 +98,13 @@ internal object DesktopTrackOverlay {
         cover = announcement.art?.let { runCatching { it.toAwtImage() }.getOrNull() }
         corner = DesktopTrackCardSettings.corner.value
         val w = ensureWindow() ?: return@invokeLater
-        w.location = location(corner)
-        if (!w.isVisible) w.isVisible = true
+        val at = location(corner)
+        w.location = at
+        if (!w.isVisible) {
+            // Read before the card is up, so the glass shows what's behind it rather than itself.
+            backdrop = blurredScreen(java.awt.Rectangle(at.x + panel.inset, at.y + panel.inset, W, H))
+            w.isVisible = true
+        }
         // Always above, even over a borderless game that took the top a moment ago.
         w.toFront()
         progressTimer.start()
@@ -115,6 +125,7 @@ internal object DesktopTrackOverlay {
             progressTimer.stop()
             shown = null
             cover = null
+            backdrop = null
             if (release && DesktopTrackToast.announcement.value?.serial == leaving.serial) DesktopTrackToast.dismiss()
         }
     }
@@ -135,10 +146,10 @@ internal object DesktopTrackOverlay {
                     panel.inset = PAD
                 } else {
                     // No see-through windows on this system: a plain card, cut to shape.
-                    background = Color(46, 46, 48)
+                    background = Color(26, 32, 44)
                     setSize(W, H)
                     panel.inset = 0
-                    runCatching { shape = RoundRectangle2D.Double(0.0, 0.0, W.toDouble(), H.toDouble(), 16.0, 16.0) }
+                    runCatching { shape = RoundRectangle2D.Double(0.0, 0.0, W.toDouble(), H.toDouble(), 24.0, 24.0) }
                 }
                 contentPane = panel
                 DesktopTrackLog.log("now playing card: desktop window ready (see-through: $perPixel)")
@@ -233,83 +244,90 @@ internal object DesktopTrackOverlay {
         }
 
         private fun drawCard(g: Graphics2D, a: DesktopTrackToast.Announcement) {
-            // The card: grey glass, whatever is behind it showing through.
-            val radius = 16f
-            g.color = Color(46, 46, 48, 214)
-            g.fill(RoundRectangle2D.Float(0f, 0f, W.toFloat(), H.toFloat(), radius, radius))
-            g.color = Color(255, 255, 255, 22)
-            g.stroke = BasicStroke(1f)
-            g.draw(RoundRectangle2D.Float(0.5f, 0.5f, W - 1f, H - 1f, radius, radius))
+            // The glass: what's behind, heavily blurred, under a dark wash.
+            val card = RoundRectangle2D.Float(0f, 0f, W.toFloat(), H.toFloat(), 24f, 24f)
+            val outer = g.clip
+            g.clip(card)
+            val glass = backdrop
+            if (glass != null) {
+                g.drawImage(glass, 0, 0, W, H, null)
+                g.color = Color(0, 0, 0, 112)
+            } else {
+                g.color = Color(26, 32, 44, 236)
+            }
+            g.fill(card)
 
-            // The left column: the cover, cropped wide, and the app's mark and name under it.
-            val colX = 6
-            val colY = 6
-            val colW = 84
-            val coverH = 54
-            val coverClip = RoundRectangle2D.Float(colX.toFloat(), colY.toFloat(), colW.toFloat(), coverH.toFloat(), 10f, 10f)
-            val old = g.clip
+            // The cover, square, with the app's mark and name centred under it.
+            val coverX = 21
+            val coverY = 9
+            val coverS = 55
+            val coverClip = RoundRectangle2D.Float(coverX.toFloat(), coverY.toFloat(), coverS.toFloat(), coverS.toFloat(), 6f, 6f)
             g.clip(coverClip)
             val image = cover
             val iw = image?.getWidth(null) ?: -1
             val ih = image?.getHeight(null) ?: -1
             if (image != null && iw > 0 && ih > 0) {
-                // Centre crop to the column's shape.
-                val want = colW.toFloat() / coverH
-                var sw = iw.toFloat()
-                var sh = sw / want
-                if (sh > ih) {
-                    sh = ih.toFloat()
-                    sw = sh * want
-                }
-                val sx = ((iw - sw) / 2).toInt()
-                val sy = ((ih - sh) / 2).toInt()
-                g.drawImage(image, colX, colY, colX + colW, colY + coverH, sx, sy, sx + sw.toInt(), sy + sh.toInt(), null)
+                val side = minOf(iw, ih)
+                val sx = (iw - side) / 2
+                val sy = (ih - side) / 2
+                g.drawImage(image, coverX, coverY, coverX + coverS, coverY + coverS, sx, sy, sx + side, sy + side, null)
             } else {
-                g.color = Color(70, 70, 74)
+                g.color = Color(58, 62, 72)
                 g.fill(coverClip)
             }
-            g.clip = old
-            g.font = Font("Segoe UI Semibold", Font.PLAIN, 11)
-            val fm = g.fontMetrics
-            val markW = 15
-            val markH = 10
-            val labelY = H - 9
-            logo?.let { g.drawImage(it, colX + 2, labelY - markH, markW, markH, null) }
-            g.color = Color(245, 245, 245)
-            g.drawString(fit("BitChord", fm, colW - markW - 6), colX + 2 + markW + 4, labelY)
+            g.clip = outer
+            g.clip(card)
+
+            g.font = Font("Segoe UI", Font.BOLD, 11)
+            val name = "BitChord"
+            val nameW = g.fontMetrics.stringWidth(name)
+            val iconS = 13
+            val rowW = iconS + 4 + nameW
+            val rowX = coverX + (coverS - rowW) / 2
+            val iconY = 69
+            val icon = logo
+            if (icon != null) {
+                g.drawImage(icon, rowX, iconY, iconS, iconS, null)
+            } else {
+                g.color = Color.WHITE
+                g.fillOval(rowX, iconY, iconS, iconS)
+            }
+            g.color = Color.WHITE
+            g.drawString(name, rowX + iconS + 4, 80)
 
             // Title, artist, and the progress row.
-            val textX = colX + colW + 12
-            val textW = W - textX - 14
+            val textX = 105
+            val right = W - 10
             g.font = Font("Segoe UI", Font.BOLD, 15)
             g.color = Color.WHITE
-            g.drawString(fit(a.song.title, g.fontMetrics, textW), textX, 29)
-            g.font = Font("Segoe UI", Font.PLAIN, 12)
-            g.color = Color(176, 176, 178)
-            g.drawString(fit(a.song.artist, g.fontMetrics, textW), textX, 47)
+            g.drawString(fit(a.song.title, g.fontMetrics, right - textX), textX, 33)
+            g.font = Font("Segoe UI", Font.PLAIN, 12).deriveFont(12.5f)
+            g.color = Color(163, 163, 166)
+            g.drawString(fit(a.song.artist, g.fontMetrics, right - textX), textX, 51)
 
             val (position, duration) = progress(a)
             g.font = Font("Segoe UI", Font.PLAIN, 11)
             val tfm = g.fontMetrics
             val elapsed = clock(position)
             val total = if (duration > 0L) clock(duration) else "–:––"
-            val rowY = 67
-            val baseline = rowY + tfm.ascent / 2 - 2
-            g.color = Color(196, 196, 198)
+            val rowY = 70
+            val baseline = rowY + (tfm.ascent - tfm.descent) / 2
+            g.color = Color(158, 158, 161)
             g.drawString(elapsed, textX, baseline)
             val totalW = tfm.stringWidth(total)
-            g.drawString(total, textX + textW - totalW, baseline)
-            val barX = textX + tfm.stringWidth(elapsed) + 10
-            val barW = (textX + textW - totalW - 10) - barX
+            g.drawString(total, right - totalW, baseline)
+            val barX = textX + tfm.stringWidth(elapsed) + 8
+            val barW = (right - totalW - 8) - barX
             if (barW > 10) {
-                g.color = Color(255, 255, 255, 40)
+                g.color = Color(255, 255, 255, 38)
                 g.fill(RoundRectangle2D.Float(barX.toFloat(), rowY - 2.5f, barW.toFloat(), 5f, 5f, 5f))
                 val fraction = if (duration > 0L) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f
                 if (fraction > 0f) {
                     g.color = barColour(a)
-                    g.fill(RoundRectangle2D.Float(barX.toFloat(), rowY - 2.5f, barW * fraction, 5f, 5f, 5f))
+                    g.fill(RoundRectangle2D.Float(barX.toFloat(), rowY - 2.5f, maxOf(5f, barW * fraction), 5f, 5f, 5f))
                 }
             }
+            g.clip = outer
         }
 
         private fun barColour(a: DesktopTrackToast.Announcement): Color {
@@ -317,7 +335,7 @@ internal object DesktopTrackOverlay {
             return if (DesktopTrackCardSettings.style.value == TrackCardStyle.ALBUM && accent != null) {
                 Color(accent.toArgb(), true)
             } else {
-                Color(200, 200, 202)
+                Color(160, 178, 209)
             }
         }
     }
@@ -342,6 +360,71 @@ internal object DesktopTrackOverlay {
     private fun clock(ms: Long): String {
         val total = (ms / 1_000L).coerceAtLeast(0L)
         return "${total / 60}:${(total % 60).toString().padStart(2, '0')}"
+    }
+
+    /**
+     * The screen under [area], blurred hard enough that only its colours are left, for the card's
+     * glass. Read once as the card comes in. Null where the screen can't be read.
+     */
+    private fun blurredScreen(area: java.awt.Rectangle): BufferedImage? = runCatching {
+        val grab = java.awt.Robot().createScreenCapture(area)
+        // Down to a sixth, blurred there, and back up smoothly: a wide, soft blur for very little work.
+        val sw = maxOf(1, area.width / 6)
+        val sh = maxOf(1, area.height / 6)
+        var small = BufferedImage(sw, sh, BufferedImage.TYPE_INT_RGB)
+        val down = small.createGraphics()
+        down.drawImage(grab.getScaledInstance(sw, sh, Image.SCALE_AREA_AVERAGING), 0, 0, null)
+        down.dispose()
+        repeat(3) { small = boxBlur(small, 2) }
+        val out = BufferedImage(area.width, area.height, BufferedImage.TYPE_INT_RGB)
+        val up = out.createGraphics()
+        up.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
+        up.drawImage(small, 0, 0, area.width, area.height, null)
+        up.dispose()
+        out
+    }.onFailure { DesktopTrackLog.log("now playing card: couldn't read the screen for the glass (${it.message})") }.getOrNull()
+
+    private fun boxBlur(src: BufferedImage, r: Int): BufferedImage {
+        val w = src.width
+        val h = src.height
+        val out = BufferedImage(w, h, BufferedImage.TYPE_INT_RGB)
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                var rs = 0
+                var gs = 0
+                var bs = 0
+                var n = 0
+                for (dy in -r..r) {
+                    val yy = (y + dy).coerceIn(0, h - 1)
+                    for (dx in -r..r) {
+                        val c = src.getRGB((x + dx).coerceIn(0, w - 1), yy)
+                        rs += (c shr 16) and 0xFF
+                        gs += (c shr 8) and 0xFF
+                        bs += c and 0xFF
+                        n++
+                    }
+                }
+                out.setRGB(x, y, ((rs / n) shl 16) or ((gs / n) shl 8) or (bs / n))
+            }
+        }
+        return out
+    }
+
+    /** The app's mark cut out of a white disc. */
+    private fun badgeIcon(mark: BufferedImage): BufferedImage {
+        val size = 52
+        val icon = BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB)
+        val g = icon.createGraphics()
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
+        g.color = Color.WHITE
+        g.fillOval(0, 0, size, size)
+        g.composite = AlphaComposite.DstOut
+        val markW = (size * 0.62).toInt()
+        val markH = markW * mark.height / mark.width
+        g.drawImage(mark, (size - markW) / 2, (size - markH) / 2 + 1, markW, markH, null)
+        g.dispose()
+        return icon
     }
 
     /** The app's mark, drawn from its SVG at [w]×[h] (twice the size it shows at, for sharp edges). */

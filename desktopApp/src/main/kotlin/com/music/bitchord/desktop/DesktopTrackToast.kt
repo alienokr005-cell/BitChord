@@ -165,11 +165,11 @@ internal object DesktopTrackToast {
     }
 }
 
-private const val CARD_WIDTH_DP = 336
-private const val CARD_HEIGHT_DP = 80
+private const val CARD_WIDTH_DP = 340
+private const val CARD_HEIGHT_DP = 90
 
-/** The bar's light grey, as on the Spotify card in Discord's overlay. */
-private val ClassicBar = Color(0xFFC8C8CA)
+/** The bar's light blue-grey, as on the card this one is modelled on. */
+private val ClassicBar = Color(0xFFA0B2D1)
 
 /** How far the card travels on its way in, from the edge it belongs to. */
 private const val TRAVEL_DP = 44f
@@ -311,12 +311,11 @@ private fun TrackCardPresenter(
 }
 
 /**
- * The card itself, laid out like the Spotify card in Discord's overlay: grey glass, the cover
- * cropped wide at the top left with the app's mark and name under it, the title, the artist, and a
- * progress bar between the elapsed and total time. The same card [DesktopTrackOverlay] draws on
- * the desktop.
+ * The card itself, inside BitChord's window: the same card [DesktopTrackOverlay] draws on the
+ * desktop — the square cover with the app's mark and name under it, the title, the artist, and a
+ * progress bar between the elapsed and total time — on dark glass.
  *
- * [TrackCardStyle.ALBUM] fills the bar with the cover's own colour; [TrackCardStyle.CLASSIC] keeps it grey.
+ * [TrackCardStyle.ALBUM] fills the bar with the cover's own colour; [TrackCardStyle.CLASSIC] keeps it blue-grey.
  */
 @Composable
 private fun TrackCard(
@@ -328,7 +327,7 @@ private fun TrackCard(
     modifier: Modifier = Modifier,
 ) {
     val song = announcement.song
-    val shape = RoundedCornerShape(8.dp)
+    val shape = RoundedCornerShape(12.dp)
     val accent = announcement.accent.takeIf { style == TrackCardStyle.ALBUM } ?: ClassicBar
 
     Box(
@@ -336,62 +335,67 @@ private fun TrackCard(
             .size(CARD_WIDTH_DP.dp, CARD_HEIGHT_DP.dp)
             .shadow(16.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
             .clip(shape)
-            .background(Color(0xD62E2E30))
-            .border(1.dp, Color.White.copy(alpha = 0.09f), shape)
+            .background(Color(0xEB1A202C))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick,
             ),
     ) {
-        Row(Modifier.fillMaxSize().padding(start = 6.dp, top = 6.dp, end = 14.dp, bottom = 6.dp)) {
-            Column(
+        Column(
+            Modifier
+                .padding(start = 21.dp, top = 9.dp)
+                .width(55.dp)
+                .graphicsLayer {
+                    val c = cover()
+                    alpha = c.coerceIn(0f, 1f)
+                    val scale = 0.8f + 0.2f * c
+                    scaleX = scale
+                    scaleY = scale
+                },
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
                 Modifier
-                    .width(84.dp)
-                    .graphicsLayer {
-                        val c = cover()
-                        alpha = c.coerceIn(0f, 1f)
-                        val scale = 0.8f + 0.2f * c
-                        scaleX = scale
-                        scaleY = scale
-                    },
+                    .size(55.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(Color(0xFF3A3E48)),
             ) {
-                Box(
-                    Modifier
-                        .size(84.dp, 54.dp)
-                        .clip(RoundedCornerShape(5.dp))
-                        .background(Color(0xFF46464A)),
-                ) {
-                    announcement.art?.let {
-                        Image(it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
-                    }
-                }
-                Spacer(Modifier.weight(1f))
-                Row(Modifier.padding(start = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Image(painterResource(Res.drawable.logo_mark), contentDescription = null, modifier = Modifier.size(15.dp, 10.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("BitChord", color = Color(0xFFF5F5F5), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                announcement.art?.let {
+                    Image(it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
                 }
             }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f).padding(top = 9.dp)) {
-                StaggeredLine(words, 0f) {
-                    Text(
-                        song.title,
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+            Spacer(Modifier.height(5.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(13.dp).clip(RoundedCornerShape(50)).background(Color.White), contentAlignment = Alignment.Center) {
+                    Image(
+                        painterResource(Res.drawable.logo_mark),
+                        contentDescription = null,
+                        colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(Color(0xFF1A202C)),
+                        modifier = Modifier.size(8.dp, 5.5.dp),
                     )
                 }
-                StaggeredLine(words, 0.12f) {
-                    Text(song.artist, color = Color(0xFFB0B0B2), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                Spacer(Modifier.height(8.dp))
-                StaggeredLine(words, 0.24f) {
-                    TrackProgress(song, accent)
-                }
+                Spacer(Modifier.width(4.dp))
+                Text("BitChord", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+            }
+        }
+        Column(Modifier.padding(start = 105.dp, top = 17.dp, end = 10.dp)) {
+            StaggeredLine(words, 0f) {
+                Text(
+                    song.title,
+                    color = Color.White,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            StaggeredLine(words, 0.12f) {
+                Text(song.artist, color = Color(0xFFA3A3A6), fontSize = 12.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Spacer(Modifier.height(6.dp))
+            StaggeredLine(words, 0.24f) {
+                TrackProgress(song, accent)
             }
         }
     }
@@ -419,18 +423,18 @@ private fun TrackProgress(song: Song, accent: Color) {
         }
     }
     val fraction = if (durationMs > 0L) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
-    val timeColour = Color(0xFFC4C4C6)
+    val timeColour = Color(0xFF9E9EA1)
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(clock(positionMs), color = timeColour, fontSize = 11.sp)
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(8.dp))
         Canvas(Modifier.weight(1f).height(5.dp)) {
             val r = CornerRadius(size.height / 2, size.height / 2)
-            drawRoundRect(Color.White.copy(alpha = 0.16f), cornerRadius = r)
+            drawRoundRect(Color.White.copy(alpha = 0.15f), cornerRadius = r)
             if (fraction > 0f) {
                 drawRoundRect(accent, size = Size(size.width * fraction, size.height), cornerRadius = r)
             }
         }
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(8.dp))
         Text(if (durationMs > 0L) clock(durationMs) else "–:––", color = timeColour, fontSize = 11.sp)
     }
 }
