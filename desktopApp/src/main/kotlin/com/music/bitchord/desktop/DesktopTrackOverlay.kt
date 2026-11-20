@@ -74,9 +74,9 @@ internal object DesktopTrackOverlay {
     private var animStart = 0L
     private var animMs = 1
     private var afterAnim: (() -> Unit)? = null
-    private val animTimer = Timer(15) { stepAnimation() }
-    private val stayTimer = Timer(5_000) { hide(release = true) }.apply { isRepeats = false }
-    private val progressTimer = Timer(250) { panel.repaint() }
+    private val animTimer: Timer = Timer(15) { stepAnimation() }
+    private val stayTimer: Timer = Timer(5_000) { hide(release = true) }.apply { isRepeats = false }
+    private val progressTimer: Timer = Timer(250) { panel.repaint() }
 
     @Volatile private var logo: BufferedImage? = null
 
@@ -86,7 +86,7 @@ internal object DesktopTrackOverlay {
         }
     }
 
-    fun show(announcement: DesktopTrackToast.Announcement, onOpen: () -> Unit) = SwingUtilities.invokeLater {
+    fun show(announcement: DesktopTrackToast.Announcement, onOpen: () -> Unit): Unit = SwingUtilities.invokeLater {
         this.onOpen = onOpen
         val replacing = shown != null && appear > 0f
         shown = announcement
@@ -107,7 +107,7 @@ internal object DesktopTrackOverlay {
     }
 
     /** Takes the card away; [release] also clears the announcement, when this card still owns it. */
-    fun hide(release: Boolean = false) = SwingUtilities.invokeLater {
+    fun hide(release: Boolean = false): Unit = SwingUtilities.invokeLater {
         val leaving = shown ?: return@invokeLater
         stayTimer.stop()
         animate(0f, OUT_MS) {
@@ -161,7 +161,7 @@ internal object DesktopTrackOverlay {
         animTimer.start()
     }
 
-    private fun stepAnimation() {
+    private fun stepAnimation(): Unit {
         val t = ((System.nanoTime() - animStart) / 1_000_000f / animMs).coerceIn(0f, 1f)
         // Ease out on the way in, ease in on the way out.
         val eased = if (animTo > animFrom) 1f - (1f - t) * (1f - t) * (1f - t) else t * t
