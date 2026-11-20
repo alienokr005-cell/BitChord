@@ -94,6 +94,13 @@ internal object DesktopTrackOverlay {
 
     private val TINT = Color(0f, 0f, 0f, TINT_ALPHA)
 
+    // The shadow around the card, measured off the reference recordings: the screen just outside
+    // is about half as bright at 2 px, a quarter darker at 6 px and itself again by about 10 px,
+    // a little heavier below than above.
+    private const val SHADOW_BLUR = 5.4f
+    private const val SHADOW_ALPHA = 0.55f
+    private const val SHADOW_DROP = 1.5f
+
     /** Transparent room around the card for the slide in from the edge; clicks pass through it. */
     private const val PAD = 28
     private const val EDGE_MARGIN = 16
@@ -425,6 +432,8 @@ internal object DesktopTrackOverlay {
                 bg.drawImage(cardMask(buffer.width, buffer.height, scale), 0, 0, null)
                 bg.dispose()
                 g2.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, appear.coerceIn(0f, 1f))
+                // The shadow, in the window's see-through margin; a plain window has none to draw in.
+                if (inset > 0) g2.drawImage(shadow, -PAD, -PAD, W + PAD * 2, H + PAD * 2, null)
                 g2.drawImage(buffer, 0, 0, W, H, null)
             } finally {
                 g2.dispose()
@@ -484,6 +493,29 @@ internal object DesktopTrackOverlay {
 
     private var buffer: BufferedImage? = null
     private var mask: BufferedImage? = null
+
+    /** The card's soft shadow, the card's own shape blurred, with [PAD] of room on every side. */
+    private val shadow: BufferedImage by lazy {
+        val w = W + PAD * 2
+        val h = H + PAD * 2
+        val shape = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
+        val g = shape.createGraphics()
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        g.color = Color.WHITE
+        g.fill(RoundRectangle2D.Float(PAD.toFloat(), PAD + SHADOW_DROP, W.toFloat(), H.toFloat(), RADIUS * 2, RADIUS * 2))
+        g.dispose()
+        val raw = shape.getRGB(0, 0, w, h, null, 0, w)
+        val alpha = blur(FloatArray(w * h) { ((raw[it] ushr 24) and 0xFF).toFloat() }, w, h, SHADOW_BLUR)
+        val out = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
+        out.setRGB(0, 0, w, h, IntArray(w * h) { (((alpha[it] * SHADOW_ALPHA).toInt().coerceIn(0, 255)) shl 24) }, 0, w)
+        // Only outside the card: under it, the darkening was already measured into the card's tint.
+        val cut = out.createGraphics()
+        cut.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        cut.composite = AlphaComposite.DstOut
+        cut.fill(RoundRectangle2D.Float(PAD.toFloat(), PAD.toFloat(), W.toFloat(), H.toFloat(), RADIUS * 2, RADIUS * 2))
+        cut.dispose()
+        out
+    }
 
     /** The off-screen card, reused while the screen's density stays the same. */
     private fun cardBuffer(scale: Double): BufferedImage {
