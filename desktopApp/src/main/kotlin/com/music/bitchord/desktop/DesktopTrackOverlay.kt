@@ -47,9 +47,10 @@ private val GREY_BAR = Color(0xE2, 0xE2, 0xE2)
  * The "Now playing" card on the desktop, copied from the Spotify card in Discord's game overlay,
  * measured frame by frame off a recording of it:
  *
- * - The card's ground is the song's own cover, scaled to the card's width, blurred until only its
- *   shapes are left, and darkened to a quarter. Its left, top and bottom edges are crisp; on the
- *   right it fades out over the last few pixels, under the total time, into whatever is behind.
+ * - The card is a half-dark tint over whatever is behind it. On that lies the song's own cover,
+ *   scaled to the card's width, blurred until only its shapes are left and darkened to a quarter;
+ *   it fades in from the card's left edge to the cover, and out at the right under the total time,
+ *   so both ends show the screen behind through the tint.
  * - The cover sits at the top left with the app's mark and name under it; the title, the artist,
  *   and a progress bar between the elapsed and total time sit to its right. The bar is a soft
  *   pastel of the cover's colour.
@@ -75,9 +76,16 @@ internal object DesktopTrackOverlay {
     private const val TEXT_X = 113
     private const val RIGHT_PAD = 17
 
-    /** Where the ground starts fading out on the right, and where it's gone. */
-    private const val FADE_FROM = 362f
-    private const val FADE_TO = 394f
+    // Where the cover's ground fades in from the left and out at the right, and its short soft
+    // top: outside these the card is a dark tint over the live screen behind it. Measured.
+    private const val LEFT_FADE_FROM = 18f
+    private const val LEFT_FADE_TO = 40f
+    private const val RIGHT_FADE_FROM = 371f
+    private const val RIGHT_FADE_TO = 395f
+    private const val TOP_FADE = 6f
+
+    /** The tint over the screen behind, where the cover's ground isn't: about half. */
+    private val TINT = Color(0, 0, 0, 128)
 
     /** Transparent room around the card for the slide in from the edge; clicks pass through it. */
     private const val PAD = 28
@@ -139,9 +147,13 @@ internal object DesktopTrackOverlay {
 
     @Volatile private var logo: BufferedImage? = null
 
-    /** The ground's alpha across the card: solid, then fading out at the right. */
+    /** The cover's ground's alpha over the card, by pixel: fading in from the left, out at the right. */
     private val groundAlpha: FloatArray by lazy {
-        FloatArray(W) { x -> 1f - smooth(FADE_FROM, FADE_TO, x + 0.5f) }
+        FloatArray(W * H) { i ->
+            val x = i % W + 0.5f
+            val y = i / W + 0.5f
+            smooth(LEFT_FADE_FROM, LEFT_FADE_TO, x) * (1f - smooth(RIGHT_FADE_FROM, RIGHT_FADE_TO, x)) * smooth(0f, TOP_FADE, y)
+        }
     }
 
     init {
@@ -397,6 +409,11 @@ internal object DesktopTrackOverlay {
         val outer = g.clip
         g.clip(card)
 
+        // The tint over whatever is behind, which shows through at the card's ends.
+        fade(g, alpha) {
+            g.color = TINT
+            g.fillRect(0, 0, W, H)
+        }
         // The ground: the cover's, cross-fading to the new song's.
         val coverIn = ease((swapMs / COVER_FADE_MS).coerceIn(0f, 1f))
         if (old != null) drawGlass(g, old, alpha)
@@ -446,13 +463,13 @@ internal object DesktopTrackOverlay {
         fade(g, alpha) { g.drawImage(glass, 0, 0, W, H, null) }
     }
 
-    /** No cover: a plain dark ground, faded out at the right the same way. */
+    /** No cover: a plain dark ground, faded at both ends the same way. */
     private val plainGlass: BufferedImage by lazy {
         val img = BufferedImage(W, H, BufferedImage.TYPE_INT_ARGB)
         val fade = groundAlpha
         for (y in 0 until H) {
             for (x in 0 until W) {
-                val a = (fade[x] * 255).toInt().coerceIn(0, 255)
+                val a = (fade[y * W + x] * 255).toInt().coerceIn(0, 255)
                 img.setRGB(x, y, (a shl 24) or 0x141414)
             }
         }
@@ -599,7 +616,7 @@ internal object DesktopTrackOverlay {
 
     /**
      * The cover scaled to the card's width, blurred until only its shapes are left, darkened to a
-     * quarter, and faded out at the right — the card's ground for this song.
+     * quarter, and faded out at both ends — the card's ground for this song.
      */
     private fun coverGlass(cover: Image): BufferedImage? = runCatching {
         val iw = cover.getWidth(null)
@@ -633,7 +650,7 @@ internal object DesktopTrackOverlay {
                 val r = (((c shr 16) and 0xFF) * 0.24f).toInt()
                 val gg = (((c shr 8) and 0xFF) * 0.24f).toInt()
                 val b = ((c and 0xFF) * 0.24f).toInt()
-                val a = (fade[x] * 255).toInt().coerceIn(0, 255)
+                val a = (fade[y * W + x] * 255).toInt().coerceIn(0, 255)
                 out.setRGB(x, y, (a shl 24) or (r shl 16) or (gg shl 8) or b)
             }
         }
