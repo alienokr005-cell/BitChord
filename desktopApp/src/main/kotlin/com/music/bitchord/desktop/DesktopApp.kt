@@ -1838,6 +1838,8 @@ fun BitChordDesktopApp() {
         }
     }
     val playback by playbackEngine.state.collectAsState()
+    // The "Now playing" card reads the playhead off this for its progress bar.
+    DesktopTrackToast.playback = playbackEngine.state
 
     // The shared player reads the playhead off this one object, and only where it
     // draws it — see PlaybackPosition — so a tick never recomposes the player.
@@ -8167,7 +8169,7 @@ private fun NowPlayingCardSettings() {
             )
             SettingsChoiceRow(
                 "Style",
-                "Glossy has a polished sheen; Artwork glass is tinted by the song's cover",
+                "Album colour tints the card and its progress bar with the song's cover; Dark keeps it plain",
                 TrackCardStyle.entries, style, { it.label }, DesktopTrackCardSettings::setStyle,
             )
             if (placement == TrackCardPlacement.SCREEN) {
