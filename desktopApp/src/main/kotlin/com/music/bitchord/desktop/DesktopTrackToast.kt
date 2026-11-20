@@ -501,6 +501,7 @@ private fun accentColour(art: ImageBitmap): Color? = runCatching {
     val r = FloatArray(bins)
     val g = FloatArray(bins)
     val b = FloatArray(bins)
+    val count = IntArray(bins)
     val steps = 24
     val hsv = FloatArray(3)
     for (yi in 0 until steps) {
@@ -510,17 +511,21 @@ private fun accentColour(art: ImageBitmap): Color? = runCatching {
             val pg = (argb shr 8) and 0xFF
             val pb = argb and 0xFF
             java.awt.Color.RGBtoHSB(pr, pg, pb, hsv)
-            val w = hsv[1] * hsv[1] * hsv[2]
-            if (w < 0.04f) continue
+            // Weighted hard towards saturation, so a few vivid patches outvote a mostly grey cover,
+            // as the overlay this card copies picks its colour.
+            if (hsv[1] < 0.22f || hsv[2] < 0.15f) continue
+            val w = hsv[1] * hsv[1] * hsv[1] * hsv[2]
             val bin = ((hsv[0] * bins).toInt()).coerceIn(0, bins - 1)
             weight[bin] += w
+            count[bin]++
             r[bin] += pr * w
             g[bin] += pg * w
             b[bin] += pb * w
         }
     }
     val best = weight.indices.maxByOrNull { weight[it] } ?: return@runCatching null
-    if (weight[best] <= 0f) return@runCatching null
+    // A black-and-white cover with a faint tint here and there has no colour to give.
+    if (weight[best] <= 0f || count[best] < steps * steps / 50) return@runCatching null
     val w = weight[best]
     java.awt.Color.RGBtoHSB((r[best] / w).toInt(), (g[best] / w).toInt(), (b[best] / w).toInt(), hsv)
     val rgb = java.awt.Color.HSBtoRGB(hsv[0], hsv[1].coerceIn(0.45f, 0.85f), hsv[2].coerceAtLeast(0.82f))
