@@ -8183,7 +8183,7 @@ private fun NowPlayingCardSettings() {
             }
             SettingsChoiceRow(
                 "Show for",
-                "How long the card stays before it slides away. Always keeps it up, like a game overlay",
+                "How long the card stays before it slides away. Permanent keeps it on screen whenever a song is loaded, playing or paused",
                 TrackCardDuration.entries, duration, { it.label }, DesktopTrackCardSettings::setDuration,
             )
             if (settingsRowVisible("Preview the card")) {

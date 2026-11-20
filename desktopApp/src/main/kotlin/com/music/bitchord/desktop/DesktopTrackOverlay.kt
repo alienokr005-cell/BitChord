@@ -386,7 +386,8 @@ internal object DesktopTrackOverlay {
                 override fun mouseClicked(e: MouseEvent) {
                     // Mid-game, a stray click shouldn't pull BitChord over the game.
                     if (!DesktopFullscreenApps.active()) onOpen()
-                    hide(release = true)
+                    // A permanent card stays; a passing one goes once it's been answered.
+                    if (DesktopTrackCardSettings.duration.value != TrackCardDuration.ALWAYS) hide(release = true)
                 }
             })
         }

@@ -107,12 +107,43 @@ internal object DesktopTrackToast {
     @Volatile private var lastVideoId: String? = null
     @Volatile private var serial = 0L
 
-    /** Called whenever the playing track or play state changes; announces only a new track. */
+    @Volatile private var lastSong: Song? = null
+
+    private val permanent: Boolean get() = DesktopTrackCardSettings.duration.value == TrackCardDuration.ALWAYS
+
+    /**
+     * Called whenever the playing track or play state changes; announces only a new track — or,
+     * with the card set to stay on screen, any loaded track the card isn't already showing, paused
+     * or not, so it comes back up after anything that took it down.
+     */
     fun onTrack(song: Song?, isPlaying: Boolean) {
-        if (song == null || !isPlaying) return
+        lastSong = song
+        if (song == null) return
+        if (permanent) {
+            if (song.videoId == lastVideoId && current.value != null) return
+            lastVideoId = song.videoId
+            announce(song)
+            return
+        }
+        if (!isPlaying) return
         if (song.videoId == lastVideoId) return
         lastVideoId = song.videoId
         announce(song)
+    }
+
+    /**
+     * The card's settings changed: put it up at once when it has just been set to stay on screen,
+     * and let it go when it no longer should.
+     */
+    fun refresh() {
+        if (permanent) {
+            val song = lastSong ?: return
+            if (current.value != null) return
+            lastVideoId = song.videoId
+            announce(song)
+        } else if (current.value != null) {
+            dismiss()
+        }
     }
 
     /** Shows the card now, for Settings' Preview button. */
@@ -292,7 +323,8 @@ private fun TrackCardPresenter(
         words = { words.value },
         onClick = {
             onClick()
-            scope.launch { leave() }
+            // A permanent card stays put.
+            if (duration != TrackCardDuration.ALWAYS) scope.launch { leave() }
         },
         modifier = modifier.graphicsLayer {
             val p = card.value

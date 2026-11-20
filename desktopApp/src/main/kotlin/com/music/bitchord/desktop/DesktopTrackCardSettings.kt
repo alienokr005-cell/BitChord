@@ -42,8 +42,11 @@ internal enum class TrackCardDuration(val label: String, val millis: Long) {
     NORMAL("5 s", 5_000),
     LONG("8 s", 8_000),
 
-    /** Stays up while music plays, like a game overlay's player; pause shows on it. */
-    ALWAYS("Always", Long.MAX_VALUE),
+    /**
+     * Stays on screen whenever a song is loaded, playing or paused, like a game overlay's player;
+     * pause shows on it, and it updates in place on every new song.
+     */
+    ALWAYS("Permanent", Long.MAX_VALUE),
 }
 
 /** The card's settings, persisted, and readable from anywhere as flows. */
@@ -69,10 +72,20 @@ internal object DesktopTrackCardSettings {
     /** Whether the desktop card shows over full-screen games (borderless/windowed full screen). */
     val overGames: StateFlow<Boolean> = _overGames
 
-    fun setPlacement(value: TrackCardPlacement) = save(KEY_PLACEMENT, value, _placement)
+    fun setPlacement(value: TrackCardPlacement) {
+        save(KEY_PLACEMENT, value, _placement)
+        // Moved between inside the app and the desktop, a permanent card follows at once.
+        if (value != TrackCardPlacement.OFF) {
+            DesktopTrackToast.dismiss()
+            DesktopTrackToast.refresh()
+        }
+    }
     fun setCorner(value: TrackCardCorner) = save(KEY_CORNER, value, _corner)
     fun setStyle(value: TrackCardStyle) = save(KEY_STYLE, value, _style)
-    fun setDuration(value: TrackCardDuration) = save(KEY_DURATION, value, _duration)
+    fun setDuration(value: TrackCardDuration) {
+        save(KEY_DURATION, value, _duration)
+        DesktopTrackToast.refresh()
+    }
     fun setOverGames(value: Boolean) {
         persistence.saveBoolean(KEY_OVER_GAMES, value)
         _overGames.value = value
