@@ -478,6 +478,8 @@ private fun TrackCardCorner.alignment(): Alignment = when (this) {
     TrackCardCorner.TOP_LEFT -> Alignment.TopStart
     TrackCardCorner.TOP_CENTER -> Alignment.TopCenter
     TrackCardCorner.TOP_RIGHT -> Alignment.TopEnd
+    TrackCardCorner.MIDDLE_LEFT -> Alignment.CenterStart
+    TrackCardCorner.MIDDLE_RIGHT -> Alignment.CenterEnd
     TrackCardCorner.BOTTOM_LEFT -> Alignment.BottomStart
     TrackCardCorner.BOTTOM_CENTER -> Alignment.BottomCenter
     TrackCardCorner.BOTTOM_RIGHT -> Alignment.BottomEnd

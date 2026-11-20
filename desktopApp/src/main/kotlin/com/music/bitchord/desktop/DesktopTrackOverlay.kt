@@ -343,7 +343,10 @@ internal object DesktopTrackOverlay {
         }.onFailure { DesktopTrackLog.log("now playing card: no desktop window (${it.message})") }.getOrNull()
     }
 
-    /** Where the window goes so the card rests [EDGE_MARGIN] inside [corner], clear of the taskbar. */
+    /**
+     * Where the window goes so the card rests [EDGE_MARGIN] inside [corner], clear of the taskbar;
+     * the middle places are centred between the top and bottom of the usable screen.
+     */
     private fun location(corner: TrackCardCorner): Point {
         val config = GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice.defaultConfiguration
         val bounds = config.bounds
@@ -357,7 +360,11 @@ internal object DesktopTrackOverlay {
             1 -> right
             else -> (left + right) / 2
         }
-        val y = if (corner.top) top else bottom
+        val y = when (corner.vertical) {
+            -1 -> top
+            1 -> bottom
+            else -> (top + bottom) / 2
+        }
         return Point(x - panel.inset, y - panel.inset)
     }
 
@@ -535,7 +542,7 @@ internal object DesktopTrackOverlay {
     }
 
     private fun drawMark(g: Graphics2D, alpha: Float) {
-        g.font = Font("Segoe UI", Font.BOLD, 11)
+        g.font = Font("Arial", Font.BOLD, 11)
         val fm = g.fontMetrics
         val name = "BitChord"
         val iconS = 12
@@ -559,17 +566,17 @@ internal object DesktopTrackOverlay {
         if (alpha <= 0f) return
         val width = W - RIGHT_PAD - TEXT_X
         fade(g, alpha) {
-            g.font = Font("Segoe UI", Font.BOLD, 17)
+            g.font = Font("Arial", Font.BOLD, 17)
             g.color = Color.WHITE
             g.drawString(fit(a.song.title, g.fontMetrics, width), TEXT_X, 35)
-            g.font = Font("Segoe UI", Font.PLAIN, 14)
+            g.font = Font("Arial", Font.PLAIN, 14).deriveFont(13.5f)
             g.color = Color(0x91, 0x91, 0x91)
             g.drawString(fit(a.song.artist, g.fontMetrics, width), TEXT_X, 55)
         }
     }
 
     private fun drawProgress(g: Graphics2D, position: Long, duration: Long, fraction: Float, bar: Color, alpha: Float) {
-        g.font = Font("Segoe UI", Font.PLAIN, 12)
+        g.font = Font("Arial", Font.PLAIN, 12)
         val fm = g.fontMetrics
         val elapsed = clock(position)
         val total = if (duration > 0L) clock(duration) else "–:––"

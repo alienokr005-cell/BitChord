@@ -10,14 +10,24 @@ internal enum class TrackCardPlacement(val label: String) {
     OFF("Off"),
 }
 
-/** Which corner (or edge middle) the card sits in. */
-internal enum class TrackCardCorner(val label: String, val top: Boolean, val horizontal: Int) {
-    TOP_LEFT("Top left", top = true, horizontal = -1),
-    TOP_CENTER("Top", top = true, horizontal = 0),
-    TOP_RIGHT("Top right", top = true, horizontal = 1),
-    BOTTOM_LEFT("Bottom left", top = false, horizontal = -1),
-    BOTTOM_CENTER("Bottom", top = false, horizontal = 0),
-    BOTTOM_RIGHT("Bottom right", top = false, horizontal = 1),
+/**
+ * Where the card sits: a corner, the middle of the top or bottom edge, or the middle of the left
+ * or right edge. [vertical] is -1 at the top, 0 in the middle, 1 at the bottom; [horizontal] the
+ * same from left to right.
+ */
+internal enum class TrackCardCorner(val label: String, val vertical: Int, val horizontal: Int) {
+    TOP_LEFT("Top left", vertical = -1, horizontal = -1),
+    TOP_CENTER("Top", vertical = -1, horizontal = 0),
+    TOP_RIGHT("Top right", vertical = -1, horizontal = 1),
+    MIDDLE_LEFT("Middle left", vertical = 0, horizontal = -1),
+    MIDDLE_RIGHT("Middle right", vertical = 0, horizontal = 1),
+    BOTTOM_LEFT("Bottom left", vertical = 1, horizontal = -1),
+    BOTTOM_CENTER("Bottom", vertical = 1, horizontal = 0),
+    BOTTOM_RIGHT("Bottom right", vertical = 1, horizontal = 1),
+    ;
+
+    /** In the top row; the middle rows slide in from the side, so only the top and bottom ask. */
+    val top: Boolean get() = vertical < 0
 }
 
 /** How the card is dressed. */
