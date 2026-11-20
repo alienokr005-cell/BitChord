@@ -84,11 +84,13 @@ internal object DesktopTrackOverlay {
     private const val RIGHT_FADE_TO = 395f
     private const val TOP_FADE = 6f
 
-    // The ground, fitted to the reference by least squares: the cover at this share of the card's
-    // width, blurred with this Gaussian sigma (px), darkened to this brightness.
-    private const val GROUND_COVER_WIDTH = 0.9f
-    private const val GROUND_BLUR = 21.6f
-    private const val GROUND_BRIGHTNESS = 0.25f
+    // The ground, fitted by least squares to every background pixel of three reference cards: the
+    // cover at this share of the card's width, centred, its middle this far down the card; blurred
+    // with this Gaussian sigma (px); darkened to this brightness. About 2.6–3.8 levels RMS off.
+    private const val GROUND_COVER_WIDTH = 0.88f
+    private const val GROUND_COVER_CENTRE_Y = 0.1f
+    private const val GROUND_BLUR = 9.1f
+    private const val GROUND_BRIGHTNESS = 0.23f
 
     /** The tint over the screen behind, where the cover's ground isn't: about half. */
     private val TINT = Color(0, 0, 0, 128)
@@ -662,18 +664,18 @@ internal object DesktopTrackOverlay {
     }
 
     /**
-     * The card's ground for this song, fitted to the reference: the cover at nine-tenths of the
-     * card's width, centred, with its middle on the card's top edge; blurred smooth with a wide
-     * Gaussian; darkened to a quarter; and faded out at both ends.
+     * The card's ground for this song, fitted to the reference: the cover at nearly the card's
+     * width, centred, its middle just below the card's top edge; blurred with a Gaussian light
+     * enough to keep the cover's broad shapes; darkened to under a quarter; faded at both ends.
      */
     private fun coverGlass(cover: Image): BufferedImage? = runCatching {
         val iw = cover.getWidth(null)
         val ih = cover.getHeight(null)
         if (iw <= 0 || ih <= 0) return@runCatching null
-        // Worked at half size, which a blur this wide loses nothing to, then scaled back up.
-        val hw = W / 2
-        val hh = H / 2
-        val sigma = GROUND_BLUR / 2f
+        // Worked at full size: the blur is light enough that half size would soften it.
+        val hw = W
+        val hh = H
+        val sigma = GROUND_BLUR
         val m = kotlin.math.ceil(sigma * 3).toInt()
         val cw = hw + 2 * m
         val ch = hh + 2 * m
@@ -681,12 +683,12 @@ internal object DesktopTrackOverlay {
         val g = canvas.createGraphics()
         g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
         g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
-        val side = (W * GROUND_COVER_WIDTH / 2f).toInt()
+        val side = (W * GROUND_COVER_WIDTH).toInt()
         val small = smoothScale(cover, side)
         // Around the cover, its own average colour, so the blur doesn't pull in black.
         g.color = averageColour(small)
         g.fillRect(0, 0, cw, ch)
-        g.drawImage(small, m + (hw - side) / 2, m - side / 2, side, side, null)
+        g.drawImage(small, m + (hw - side) / 2, m + (hh * GROUND_COVER_CENTRE_Y).toInt() - side / 2, side, side, null)
         g.dispose()
         val blurred = gaussian(canvas, sigma)
         val big = BufferedImage(W, H, BufferedImage.TYPE_INT_RGB)
