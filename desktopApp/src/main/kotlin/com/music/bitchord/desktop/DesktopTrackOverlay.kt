@@ -84,6 +84,12 @@ internal object DesktopTrackOverlay {
     private const val RIGHT_FADE_TO = 395f
     private const val TOP_FADE = 6f
 
+    // The ground, fitted to the reference by least squares: the cover at this share of the card's
+    // width, blurred with this Gaussian sigma (px), darkened to this brightness.
+    private const val GROUND_COVER_WIDTH = 0.9f
+    private const val GROUND_BLUR = 21.6f
+    private const val GROUND_BRIGHTNESS = 0.25f
+
     /** The tint over the screen behind, where the cover's ground isn't: about half. */
     private val TINT = Color(0, 0, 0, 128)
 
@@ -218,8 +224,11 @@ internal object DesktopTrackOverlay {
     }
 
     private fun prepare(a: DesktopTrackToast.Announcement): Face {
-        val cover = a.art?.let { runCatching { it.toAwtImage() }.getOrNull() }
-        val glass = cover?.let { coverGlass(it) }
+        val full = a.art?.let { runCatching { it.toAwtImage() }.getOrNull() }
+        val glass = full?.let { coverGlass(it) }
+        // Shrunk smoothly once, to three times its size on the card: drawn straight from the
+        // 480 px original, one bicubic step down to 61 px comes out jagged.
+        val cover = full?.let { smoothScale(it, COVER_S * 3) }
         val bar = if (DesktopTrackCardSettings.style.value == TrackCardStyle.ALBUM) {
             a.accent?.let { pastel(Color(it.toArgb(), true)) } ?: GREY_BAR
         } else {
@@ -615,41 +624,46 @@ internal object DesktopTrackOverlay {
     }
 
     /**
-     * The cover scaled to the card's width, blurred until only its shapes are left, darkened to a
-     * quarter, and faded out at both ends — the card's ground for this song.
+     * The card's ground for this song, fitted to the reference: the cover at nine-tenths of the
+     * card's width, centred, with its middle on the card's top edge; blurred smooth with a wide
+     * Gaussian; darkened to a quarter; and faded out at both ends.
      */
     private fun coverGlass(cover: Image): BufferedImage? = runCatching {
         val iw = cover.getWidth(null)
         val ih = cover.getHeight(null)
         if (iw <= 0 || ih <= 0) return@runCatching null
-        // The middle band of the cover, at the card's shape: the cover is as wide as the card.
-        val side = min(iw, ih)
-        val ox = (iw - side) / 2
-        val bandH = side * H / W
-        val oy = (ih - bandH) / 2
-        val sw = max(1, W / 6)
-        val sh = max(1, H / 6)
-        var small = BufferedImage(sw, sh, BufferedImage.TYPE_INT_RGB)
-        val down = small.createGraphics()
-        down.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
-        down.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
-        down.drawImage(cover, 0, 0, sw, sh, ox, oy, ox + side, oy + bandH, null)
-        down.dispose()
-        repeat(3) { small = boxBlur(small, 1) }
+        // Worked at half size, which a blur this wide loses nothing to, then scaled back up.
+        val hw = W / 2
+        val hh = H / 2
+        val sigma = GROUND_BLUR / 2f
+        val m = kotlin.math.ceil(sigma * 3).toInt()
+        val cw = hw + 2 * m
+        val ch = hh + 2 * m
+        val canvas = BufferedImage(cw, ch, BufferedImage.TYPE_INT_RGB)
+        val g = canvas.createGraphics()
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+        val side = (W * GROUND_COVER_WIDTH / 2f).toInt()
+        val small = smoothScale(cover, side)
+        // Around the cover, its own average colour, so the blur doesn't pull in black.
+        g.color = averageColour(small)
+        g.fillRect(0, 0, cw, ch)
+        g.drawImage(small, m + (hw - side) / 2, m - side / 2, side, side, null)
+        g.dispose()
+        val blurred = gaussian(canvas, sigma)
         val big = BufferedImage(W, H, BufferedImage.TYPE_INT_RGB)
         val up = big.createGraphics()
-        up.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
-        up.drawImage(small, 0, 0, W, H, null)
+        up.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+        up.drawImage(blurred, 0, 0, W, H, m, m, m + hw, m + hh, null)
         up.dispose()
         val out = BufferedImage(W, H, BufferedImage.TYPE_INT_ARGB)
         val fade = groundAlpha
         for (y in 0 until H) {
             for (x in 0 until W) {
                 val c = big.getRGB(x, y)
-                // Darkened to a quarter, as measured: white comes out #3A3A3A.
-                val r = (((c shr 16) and 0xFF) * 0.24f).toInt()
-                val gg = (((c shr 8) and 0xFF) * 0.24f).toInt()
-                val b = ((c and 0xFF) * 0.24f).toInt()
+                val r = (((c shr 16) and 0xFF) * GROUND_BRIGHTNESS).toInt()
+                val gg = (((c shr 8) and 0xFF) * GROUND_BRIGHTNESS).toInt()
+                val b = ((c and 0xFF) * GROUND_BRIGHTNESS).toInt()
                 val a = (fade[y * W + x] * 255).toInt().coerceIn(0, 255)
                 out.setRGB(x, y, (a shl 24) or (r shl 16) or (gg shl 8) or b)
             }
@@ -657,29 +671,84 @@ internal object DesktopTrackOverlay {
         out
     }.getOrNull()
 
-    private fun boxBlur(src: BufferedImage, r: Int): BufferedImage {
-        val w = src.width
-        val h = src.height
-        val out = BufferedImage(w, h, BufferedImage.TYPE_INT_RGB)
-        for (y in 0 until h) {
-            for (x in 0 until w) {
-                var rs = 0
-                var gs = 0
-                var bs = 0
-                var n = 0
-                for (dy in -r..r) {
-                    val yy = (y + dy).coerceIn(0, h - 1)
-                    for (dx in -r..r) {
-                        val c = src.getRGB((x + dx).coerceIn(0, w - 1), yy)
-                        rs += (c shr 16) and 0xFF
-                        gs += (c shr 8) and 0xFF
-                        bs += c and 0xFF
-                        n++
-                    }
-                }
-                out.setRGB(x, y, ((rs / n) shl 16) or ((gs / n) shl 8) or (bs / n))
+    /** [image] at [size]×[size], halved step by step so nothing is skipped on the way down. */
+    private fun smoothScale(image: Image, size: Int): BufferedImage {
+        var w = image.getWidth(null)
+        var h = image.getHeight(null)
+        var current: Image = image
+        while (w / 2 >= size && h / 2 >= size) {
+            w /= 2
+            h /= 2
+            current = scaled(current, w, h)
+        }
+        return scaled(current, size, size)
+    }
+
+    private fun scaled(image: Image, w: Int, h: Int): BufferedImage {
+        val out = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
+        val g = out.createGraphics()
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+        g.drawImage(image, 0, 0, w, h, null)
+        g.dispose()
+        return out
+    }
+
+    private fun averageColour(image: BufferedImage): Color {
+        var r = 0L
+        var g = 0L
+        var b = 0L
+        val n = image.width.toLong() * image.height
+        for (y in 0 until image.height) {
+            for (x in 0 until image.width) {
+                val c = image.getRGB(x, y)
+                r += (c shr 16) and 0xFF
+                g += (c shr 8) and 0xFF
+                b += c and 0xFF
             }
         }
+        return Color((r / n).toInt(), (g / n).toInt(), (b / n).toInt())
+    }
+
+    /** A true Gaussian blur, done as two one-dimensional passes: smooth, with no blocks or bands. */
+    private fun gaussian(src: BufferedImage, sigma: Float): BufferedImage {
+        val w = src.width
+        val h = src.height
+        val radius = kotlin.math.ceil(sigma * 3).toInt()
+        val kernel = FloatArray(radius * 2 + 1) { i ->
+            val d = (i - radius).toFloat()
+            kotlin.math.exp(-(d * d) / (2 * sigma * sigma))
+        }
+        val total = kernel.sum()
+        for (i in kernel.indices) kernel[i] /= total
+        val pixels = src.getRGB(0, 0, w, h, null, 0, w)
+        val r = FloatArray(w * h) { ((pixels[it] shr 16) and 0xFF).toFloat() }
+        val g = FloatArray(w * h) { ((pixels[it] shr 8) and 0xFF).toFloat() }
+        val b = FloatArray(w * h) { (pixels[it] and 0xFF).toFloat() }
+        fun pass(channel: FloatArray, horizontal: Boolean): FloatArray {
+            val out = FloatArray(w * h)
+            for (y in 0 until h) {
+                for (x in 0 until w) {
+                    var sum = 0f
+                    for (k in kernel.indices) {
+                        val o = k - radius
+                        val xx = if (horizontal) (x + o).coerceIn(0, w - 1) else x
+                        val yy = if (horizontal) y else (y + o).coerceIn(0, h - 1)
+                        sum += channel[yy * w + xx] * kernel[k]
+                    }
+                    out[y * w + x] = sum
+                }
+            }
+            return out
+        }
+        val rr = pass(pass(r, true), false)
+        val gg = pass(pass(g, true), false)
+        val bb = pass(pass(b, true), false)
+        val out = BufferedImage(w, h, BufferedImage.TYPE_INT_RGB)
+        val result = IntArray(w * h) { i ->
+            (rr[i].toInt().coerceIn(0, 255) shl 16) or (gg[i].toInt().coerceIn(0, 255) shl 8) or bb[i].toInt().coerceIn(0, 255)
+        }
+        out.setRGB(0, 0, w, h, result, 0, w)
         return out
     }
 
