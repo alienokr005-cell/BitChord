@@ -115,7 +115,7 @@ internal object DesktopTrackOverlay {
     /** One song as the card draws it, with its pictures prepared once. */
     private class Face(
         val announcement: DesktopTrackToast.Announcement,
-        val cover: Image?,
+        val cover: BufferedImage?,
         /** The cover blurred over the card, darkened, with its edges feathered away. */
         val glass: BufferedImage?,
         val bar: Color,
@@ -404,7 +404,29 @@ internal object DesktopTrackOverlay {
                 val dx = if (inset > 0) away * corner.horizontal else 0f
                 val dy = if (inset > 0 && corner.horizontal == 0) away * (if (corner.top) -1f else 1f) else 0f
                 g2.translate(inset + dx.toDouble(), inset + dy.toDouble())
-                drawCard(g2, current, appear.coerceIn(0f, 1f))
+                // Drawn off screen at the screen's own pixel density, then cut to the card's
+                // rounded shape with an antialiased mask: a clip in Java2D is never antialiased,
+                // and left the corners stepped.
+                val scale = g2.transform.scaleX.coerceAtLeast(1.0)
+                val buffer = cardBuffer(scale)
+                val bg = buffer.createGraphics()
+                bg.composite = AlphaComposite.Clear
+                bg.fillRect(0, 0, buffer.width, buffer.height)
+                bg.composite = AlphaComposite.SrcOver
+                bg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                bg.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
+                bg.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
+                bg.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+                bg.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON)
+                bg.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE)
+                bg.scale(scale, scale)
+                drawCard(bg, current, 1f)
+                bg.transform = java.awt.geom.AffineTransform()
+                bg.composite = AlphaComposite.DstIn
+                bg.drawImage(cardMask(buffer.width, buffer.height, scale), 0, 0, null)
+                bg.dispose()
+                g2.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, appear.coerceIn(0f, 1f))
+                g2.drawImage(buffer, 0, 0, W, H, null)
             } finally {
                 g2.dispose()
             }
@@ -414,10 +436,6 @@ internal object DesktopTrackOverlay {
     private fun drawCard(g: Graphics2D, current: Face, alpha: Float) {
         val swapMs = if (swapStart == 0L) Float.MAX_VALUE else (System.nanoTime() - swapStart) / 1_000_000f
         val old = oldFace.takeIf { swapStart != 0L }
-        val card = RoundRectangle2D.Float(0f, 0f, W.toFloat(), H.toFloat(), RADIUS * 2, RADIUS * 2)
-        val outer = g.clip
-        g.clip(card)
-
         // The tint over whatever is behind, which shows through at the card's ends.
         fade(g, alpha) {
             g.color = TINT
@@ -463,8 +481,31 @@ internal object DesktopTrackOverlay {
         drawnFraction = fraction
         drawnBar = barColour
         drawProgress(g, position, duration, fraction, barColour, alpha)
+    }
 
-        g.clip = outer
+    private var buffer: BufferedImage? = null
+    private var mask: BufferedImage? = null
+
+    /** The off-screen card, reused while the screen's density stays the same. */
+    private fun cardBuffer(scale: Double): BufferedImage {
+        val w = kotlin.math.ceil(W * scale).toInt()
+        val h = kotlin.math.ceil(H * scale).toInt()
+        buffer?.takeIf { it.width == w && it.height == h }?.let { return it }
+        return BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB_PRE).also { buffer = it }
+    }
+
+    /** The card's rounded shape, antialiased, as an alpha mask the size of [cardBuffer]. */
+    private fun cardMask(w: Int, h: Int, scale: Double): BufferedImage {
+        mask?.takeIf { it.width == w && it.height == h }?.let { return it }
+        val m = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB_PRE)
+        val g = m.createGraphics()
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE)
+        g.scale(scale, scale)
+        g.color = Color.WHITE
+        g.fill(RoundRectangle2D.Float(0f, 0f, W.toFloat(), H.toFloat(), RADIUS * 2, RADIUS * 2))
+        g.dispose()
+        return m.also { mask = it }
     }
 
     private fun drawGlass(g: Graphics2D, f: Face, alpha: Float) {
@@ -488,23 +529,20 @@ internal object DesktopTrackOverlay {
     private fun drawCover(g: Graphics2D, f: Face, alpha: Float) {
         if (alpha <= 0f) return
         val coverClip = RoundRectangle2D.Float(COVER_X.toFloat(), COVER_Y.toFloat(), COVER_S.toFloat(), COVER_S.toFloat(), 5f, 5f)
-        val outer = g.clip
-        g.clip(coverClip)
         val image = f.cover
-        val iw = image?.getWidth(null) ?: -1
-        val ih = image?.getHeight(null) ?: -1
         fade(g, alpha) {
-            if (image != null && iw > 0 && ih > 0) {
-                val side = min(iw, ih)
-                val sx = (iw - side) / 2
-                val sy = (ih - side) / 2
-                g.drawImage(image, COVER_X, COVER_Y, COVER_X + COVER_S, COVER_Y + COVER_S, sx, sy, sx + side, sy + side, null)
+            // Filled with the cover as a texture rather than clipped to it, so the rounded corners
+            // are antialiased.
+            g.paint = if (image != null) {
+                java.awt.TexturePaint(
+                    image,
+                    Rectangle2D.Float(COVER_X.toFloat(), COVER_Y.toFloat(), COVER_S.toFloat(), COVER_S.toFloat()),
+                )
             } else {
-                g.color = Color(40, 42, 50)
-                g.fill(coverClip)
+                Color(40, 42, 50)
             }
+            g.fill(coverClip)
         }
-        g.clip = outer
     }
 
     private fun drawMark(g: Graphics2D, alpha: Float) {
@@ -671,11 +709,21 @@ internal object DesktopTrackOverlay {
         out
     }.getOrNull()
 
-    /** [image] at [size]×[size], halved step by step so nothing is skipped on the way down. */
+    /**
+     * [image]'s middle square at [size]×[size], halved step by step so nothing is skipped on the
+     * way down.
+     */
     private fun smoothScale(image: Image, size: Int): BufferedImage {
-        var w = image.getWidth(null)
-        var h = image.getHeight(null)
-        var current: Image = image
+        val iw = image.getWidth(null)
+        val ih = image.getHeight(null)
+        val side = min(iw, ih)
+        val square = BufferedImage(side, side, BufferedImage.TYPE_INT_ARGB)
+        val sg = square.createGraphics()
+        sg.drawImage(image, 0, 0, side, side, (iw - side) / 2, (ih - side) / 2, (iw - side) / 2 + side, (ih - side) / 2 + side, null)
+        sg.dispose()
+        var w = side
+        var h = side
+        var current: Image = square
         while (w / 2 >= size && h / 2 >= size) {
             w /= 2
             h /= 2
