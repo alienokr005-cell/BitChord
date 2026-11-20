@@ -8169,7 +8169,7 @@ private fun NowPlayingCardSettings() {
             )
             SettingsChoiceRow(
                 "Style",
-                "Album colour tints the card and its progress bar with the song's cover; Dark keeps it plain",
+                "Classic has a grey progress bar; Album colour fills it with the song's cover colour",
                 TrackCardStyle.entries, style, { it.label }, DesktopTrackCardSettings::setStyle,
             )
             if (placement == TrackCardPlacement.SCREEN) {

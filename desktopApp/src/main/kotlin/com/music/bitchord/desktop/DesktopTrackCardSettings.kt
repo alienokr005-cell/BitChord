@@ -22,8 +22,8 @@ internal enum class TrackCardCorner(val label: String, val top: Boolean, val hor
 
 /** How the card is dressed. */
 internal enum class TrackCardStyle(val label: String) {
+    CLASSIC("Classic"),
     ALBUM("Album colour"),
-    DARK("Dark"),
 }
 
 /** How long the card stays, in milliseconds. */
@@ -44,7 +44,7 @@ internal object DesktopTrackCardSettings {
 
     private val _placement = load(KEY_PLACEMENT, TrackCardPlacement.IN_APP)
     private val _corner = load(KEY_CORNER, TrackCardCorner.BOTTOM_RIGHT)
-    private val _style = load(KEY_STYLE, TrackCardStyle.ALBUM)
+    private val _style = load(KEY_STYLE, TrackCardStyle.CLASSIC)
     private val _duration = load(KEY_DURATION, TrackCardDuration.NORMAL)
     private val _overGames = MutableStateFlow(persistence.boolean(KEY_OVER_GAMES, true))
 

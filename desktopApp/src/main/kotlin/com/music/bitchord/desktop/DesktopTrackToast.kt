@@ -35,7 +35,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
@@ -45,22 +44,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asSkiaBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Window
 import com.music.bitchord.data.model.CARD_ART_PX
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.model.artworkAt
 import bitchord.desktopapp.generated.resources.Res
 import bitchord.desktopapp.generated.resources.logo_mark
 import org.jetbrains.compose.resources.painterResource
-import java.awt.GraphicsEnvironment
-import java.awt.Toolkit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -171,20 +165,11 @@ internal object DesktopTrackToast {
     }
 }
 
-private const val CARD_WIDTH_DP = 380
-private const val CARD_HEIGHT_DP = 92
+private const val CARD_WIDTH_DP = 336
+private const val CARD_HEIGHT_DP = 80
 
-/** Spotify's green: the bar's colour when the cover gives nothing better. */
-private val FallbackAccent = Color(0xFF1ED760)
-
-/**
- * Transparent room around the card in its desktop window, for the shadow and the slide. The window
- * hangs this far past the screen edge, so the card glides in from the very edge of the screen.
- */
-private const val SCREEN_WINDOW_PAD_DP = 56
-
-/** The card's resting gap from the screen edge (past the taskbar). */
-private const val SCREEN_EDGE_MARGIN = 16
+/** The bar's light grey, as on the Spotify card in Discord's overlay. */
+private val ClassicBar = Color(0xFFC8C8CA)
 
 /** How far the card travels on its way in, from the edge it belongs to. */
 private const val TRAVEL_DP = 44f
@@ -209,74 +194,15 @@ internal fun BoxScope.DesktopTrackCardInApp() {
 }
 
 /**
- * The card on the desktop, in its own window. Call it from the application scope. The window only
- * exists while the card can show there, and is only visible while a card is.
+ * The card on the desktop, from the application scope: hands each desktop announcement to
+ * [DesktopTrackOverlay], which draws it in its own see-through window.
  */
 @Composable
 internal fun DesktopTrackToastWindow(onOpen: () -> Unit) {
-    val placement by DesktopTrackCardSettings.placement.collectAsState()
     val announcement by DesktopTrackToast.announcement.collectAsState()
-    val corner by DesktopTrackCardSettings.corner.collectAsState()
-    if (placement == TrackCardPlacement.OFF) return
     val shown = announcement?.takeIf { it.target == DesktopTrackToast.Target.SCREEN }
-    // Not created at launch: only once a card first needs the desktop, then kept for the next.
-    var needed by remember { mutableStateOf(false) }
-    LaunchedEffect(shown != null) { if (shown != null) needed = true }
-    if (!needed) return
-
-    // Fixed for the launch, as the renderer is. A see-through window gives the card its shadow and
-    // its slide in from the screen's edge; without one, a plain window the card's own size and
-    // shape, where it fades up in place.
-    val seeThrough = remember { DesktopStability.transparencyAllowed }
-    Window(
-        visible = shown != null,
-        create = {
-            ComposeWindow().apply {
-                // Set before the window is shown — AWT refuses these on a displayable window.
-                type = java.awt.Window.Type.UTILITY // no taskbar button
-                isUndecorated = true
-                isAlwaysOnTop = true
-                focusableWindowState = false
-                isResizable = false
-                title = "BitChord – Now playing"
-                if (seeThrough) {
-                    isTransparent = true
-                    background = java.awt.Color(0, 0, 0, 0)
-                    val pad = SCREEN_WINDOW_PAD_DP * 2
-                    size = java.awt.Dimension(CARD_WIDTH_DP + pad, CARD_HEIGHT_DP + pad)
-                } else {
-                    background = java.awt.Color(0x18, 0x18, 0x18)
-                    size = java.awt.Dimension(CARD_WIDTH_DP, CARD_HEIGHT_DP)
-                    // Rounded like the card; square corners are the fallback where shaping isn't offered.
-                    runCatching {
-                        shape = java.awt.geom.RoundRectangle2D.Double(
-                            0.0, 0.0, CARD_WIDTH_DP.toDouble(), CARD_HEIGHT_DP.toDouble(), 24.0, 24.0,
-                        )
-                    }
-                }
-                DesktopTrackLog.log("now playing card: desktop window created (see-through: $seeThrough)")
-            }
-        },
-        dispose = ComposeWindow::dispose,
-        update = { window ->
-            val at = screenLocation(corner)
-            if (seeThrough) {
-                window.setLocation(at)
-            } else {
-                window.setLocation(at.x + SCREEN_WINDOW_PAD_DP, at.y + SCREEN_WINDOW_PAD_DP)
-            }
-        },
-    ) {
-        Box(Modifier.fillMaxSize().padding(if (seeThrough) SCREEN_WINDOW_PAD_DP.dp else 0.dp)) {
-            TrackCardPresenter(
-                announcement = shown,
-                corner = corner,
-                // Mid-game, a stray click on the card shouldn't pull BitChord over the game.
-                onClick = { if (!DesktopFullscreenApps.active()) onOpen() },
-                inPlace = !seeThrough,
-                modifier = Modifier.align(Alignment.Center),
-            )
-        }
+    LaunchedEffect(shown?.serial) {
+        if (shown != null) DesktopTrackOverlay.show(shown, onOpen) else DesktopTrackOverlay.hide()
     }
 }
 
@@ -298,8 +224,6 @@ private fun TrackCardPresenter(
     corner: TrackCardCorner,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    /** In a window exactly the card's size: no slide or grow, which would cut it off at the edges. */
-    inPlace: Boolean = false,
 ) {
     val style by DesktopTrackCardSettings.style.collectAsState()
     val duration by DesktopTrackCardSettings.duration.collectAsState()
@@ -371,7 +295,7 @@ private fun TrackCardPresenter(
         modifier = modifier.graphicsLayer {
             val p = card.value
             alpha = p.coerceIn(0f, 1f)
-            if (!reduceAnimation && !inPlace) {
+            if (!reduceAnimation) {
                 val away = (1f - p) * travel * density
                 when (corner.horizontal) {
                     0 -> translationY = away * (if (corner.top) -1f else 1f)
@@ -387,11 +311,12 @@ private fun TrackCardPresenter(
 }
 
 /**
- * The card itself, laid out like Spotify's "now playing" card: the cover on the left with a small
- * BitChord badge, the title and artist, and a progress bar between the elapsed and total time.
+ * The card itself, laid out like the Spotify card in Discord's overlay: grey glass, the cover
+ * cropped wide at the top left with the app's mark and name under it, the title, the artist, and a
+ * progress bar between the elapsed and total time. The same card [DesktopTrackOverlay] draws on
+ * the desktop.
  *
- * [TrackCardStyle.ALBUM] washes the dark card with the cover's own colour from the left and fills
- * the bar with it; [TrackCardStyle.DARK] keeps the card plain and the bar Spotify green.
+ * [TrackCardStyle.ALBUM] fills the bar with the cover's own colour; [TrackCardStyle.CLASSIC] keeps it grey.
  */
 @Composable
 private fun TrackCard(
@@ -403,72 +328,53 @@ private fun TrackCard(
     modifier: Modifier = Modifier,
 ) {
     val song = announcement.song
-    val shape = RoundedCornerShape(12.dp)
-    val base = Color(0xFF181818)
-    val tinted = style == TrackCardStyle.ALBUM && announcement.accent != null
-    val accent = if (tinted) announcement.accent!! else FallbackAccent
-    val secondary = Color(0xFFB3B3B3)
+    val shape = RoundedCornerShape(8.dp)
+    val accent = announcement.accent.takeIf { style == TrackCardStyle.ALBUM } ?: ClassicBar
 
     Box(
         modifier
             .size(CARD_WIDTH_DP.dp, CARD_HEIGHT_DP.dp)
-            .shadow(20.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
+            .shadow(16.dp, shape, clip = false, ambientColor = Color.Black, spotColor = Color.Black)
             .clip(shape)
-            .background(
-                if (tinted) {
-                    Brush.horizontalGradient(
-                        0f to lerp(base, accent, 0.30f).copy(alpha = 0.96f),
-                        0.65f to base.copy(alpha = 0.94f),
-                    )
-                } else {
-                    Brush.horizontalGradient(listOf(base.copy(alpha = 0.94f), base.copy(alpha = 0.94f)))
-                },
-            )
-            .border(1.dp, Color.White.copy(alpha = 0.08f), shape)
+            .background(Color(0xD62E2E30))
+            .border(1.dp, Color.White.copy(alpha = 0.09f), shape)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick,
             ),
     ) {
-        Row(
-            Modifier.fillMaxSize().padding(start = 10.dp, end = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
+        Row(Modifier.fillMaxSize().padding(start = 6.dp, top = 6.dp, end = 14.dp, bottom = 6.dp)) {
+            Column(
                 Modifier
-                    .size(72.dp)
+                    .width(84.dp)
                     .graphicsLayer {
                         val c = cover()
                         alpha = c.coerceIn(0f, 1f)
-                        val scale = 0.7f + 0.3f * c
+                        val scale = 0.8f + 0.2f * c
                         scaleX = scale
                         scaleY = scale
-                    }
-                    .shadow(6.dp, RoundedCornerShape(6.dp))
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color(0xFF282828)),
+                    },
             ) {
-                announcement.art?.let {
-                    Image(it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
-                }
-                // The app's badge on the cover's corner, as Spotify badges its own.
-                Row(
+                Box(
                     Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(4.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(Color.Black.copy(alpha = 0.62f))
-                        .padding(start = 3.dp, end = 5.dp, top = 2.dp, bottom = 2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        .size(84.dp, 54.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .background(Color(0xFF46464A)),
                 ) {
-                    Image(painterResource(Res.drawable.logo_mark), contentDescription = null, modifier = Modifier.size(10.dp))
-                    Spacer(Modifier.width(3.dp))
-                    Text("BitChord", color = Color.White, fontSize = 7.5.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    announcement.art?.let {
+                        Image(it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.matchParentSize())
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                Row(Modifier.padding(start = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Image(painterResource(Res.drawable.logo_mark), contentDescription = null, modifier = Modifier.size(15.dp, 10.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("BitChord", color = Color(0xFFF5F5F5), fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 }
             }
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f).padding(top = 9.dp)) {
                 StaggeredLine(words, 0f) {
                     Text(
                         song.title,
@@ -480,9 +386,9 @@ private fun TrackCard(
                     )
                 }
                 StaggeredLine(words, 0.12f) {
-                    Text(song.artist, color = secondary, fontSize = 12.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(song.artist, color = Color(0xFFB0B0B2), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
                 StaggeredLine(words, 0.24f) {
                     TrackProgress(song, accent)
                 }
@@ -513,24 +419,19 @@ private fun TrackProgress(song: Song, accent: Color) {
         }
     }
     val fraction = if (durationMs > 0L) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
-    val timeColour = Color(0xFFA7A7A7)
+    val timeColour = Color(0xFFC4C4C6)
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(clock(positionMs), color = timeColour, fontSize = 10.5.sp, textAlign = TextAlign.End, modifier = Modifier.width(30.dp))
-        Spacer(Modifier.width(8.dp))
-        Canvas(Modifier.weight(1f).height(4.dp)) {
+        Text(clock(positionMs), color = timeColour, fontSize = 11.sp)
+        Spacer(Modifier.width(10.dp))
+        Canvas(Modifier.weight(1f).height(5.dp)) {
             val r = CornerRadius(size.height / 2, size.height / 2)
-            drawRoundRect(Color.White.copy(alpha = 0.22f), cornerRadius = r)
+            drawRoundRect(Color.White.copy(alpha = 0.16f), cornerRadius = r)
             if (fraction > 0f) {
                 drawRoundRect(accent, size = Size(size.width * fraction, size.height), cornerRadius = r)
             }
         }
-        Spacer(Modifier.width(8.dp))
-        Text(
-            if (durationMs > 0L) clock(durationMs) else "–:––",
-            color = timeColour,
-            fontSize = 10.5.sp,
-            modifier = Modifier.width(30.dp),
-        )
+        Spacer(Modifier.width(10.dp))
+        Text(if (durationMs > 0L) clock(durationMs) else "–:––", color = timeColour, fontSize = 11.sp)
     }
 }
 
@@ -565,28 +466,6 @@ private fun TrackCardCorner.origin() = androidx.compose.ui.graphics.TransformOri
     pivotFractionX = when (horizontal) { -1 -> 0f; 1 -> 1f; else -> 0.5f },
     pivotFractionY = if (horizontal == 0) (if (top) 0f else 1f) else 0.5f,
 )
-
-/**
- * Where the card's window goes so the card rests [SCREEN_EDGE_MARGIN] inside [corner] of the
- * primary screen's usable area, clear of the taskbar. The window's transparent padding hangs past
- * the edge. AWT's own coordinates — the ones `setLocation` takes, whatever the display scaling.
- */
-private fun screenLocation(corner: TrackCardCorner): java.awt.Point {
-    val config = GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice.defaultConfiguration
-    val bounds = config.bounds
-    val insets = Toolkit.getDefaultToolkit().getScreenInsets(config)
-    val left = bounds.x + insets.left + SCREEN_EDGE_MARGIN
-    val right = bounds.x + bounds.width - insets.right - SCREEN_EDGE_MARGIN - CARD_WIDTH_DP
-    val top = bounds.y + insets.top + SCREEN_EDGE_MARGIN
-    val bottom = bounds.y + bounds.height - insets.bottom - SCREEN_EDGE_MARGIN - CARD_HEIGHT_DP
-    val cardX = when (corner.horizontal) {
-        -1 -> left
-        1 -> right
-        else -> (left + right) / 2
-    }
-    val cardY = if (corner.top) top else bottom
-    return java.awt.Point(cardX - SCREEN_WINDOW_PAD_DP, cardY - SCREEN_WINDOW_PAD_DP)
-}
 
 /**
  * The cover's most vivid colour, brightened enough to read on the dark card. Sampled once per song
