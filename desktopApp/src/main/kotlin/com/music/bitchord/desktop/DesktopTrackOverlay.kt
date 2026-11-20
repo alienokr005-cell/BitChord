@@ -47,10 +47,10 @@ private val GREY_BAR = Color(0xE2, 0xE2, 0xE2)
  * The "Now playing" card on the desktop, copied from the Spotify card in Discord's game overlay,
  * measured frame by frame off a recording of it:
  *
- * - The card is a half-dark tint over whatever is behind it. On that lies the song's own cover,
- *   at nearly the card's width, lightly blurred, darkened and made more saturated, so its colour
- *   reads deep rather than muddy. It is strongest from the cover to the total time and thins to a
- *   third at both ends, where the screen behind shows through tinted by the cover's colour.
+ * - The card is a dark tint over whatever is behind it. On that lies the song's own cover at
+ *   nearly the card's width, blurred together with the empty space around it, so its left and
+ *   right edges soften into the tint, where the screen behind shows through; its colour darkened
+ *   and made more saturated, so it reads deep rather than muddy.
  * - The cover sits at the top left with the app's mark and name under it; the title, the artist,
  *   and a progress bar between the elapsed and total time sit to its right. The bar is a soft
  *   pastel of the cover's colour.
@@ -68,42 +68,31 @@ internal object DesktopTrackOverlay {
 
     // Measured off the reference at 1600 px wide, and scaled by 1.2 for a typical 1920 px screen.
     private const val W = 408
-    private const val H = 98
-    private const val RADIUS = 9f
-    private const val COVER_X = 19
+    private const val H = 101
+    private const val RADIUS = 10f
+    private const val COVER_X = 23
     private const val COVER_Y = 12
     private const val COVER_S = 61
-    private const val TEXT_X = 113
+    private const val TEXT_X = 116
     private const val RIGHT_PAD = 17
 
-    // Where the cover's ground fades in from the left and out at the right, and its short soft
-    // top: outside these the card is a dark tint over the live screen behind it. Measured.
-    private const val LEFT_FADE_FROM = 18f
-    private const val LEFT_FADE_TO = 40f
-    private const val RIGHT_FADE_FROM = 371f
-    private const val RIGHT_FADE_TO = 395f
-    private const val TOP_FADE = 6f
-
-    // The ground, fitted by least squares to every background pixel of three reference cards: the
-    // cover at this share of the card's width, centred, its middle this far down the card; blurred
-    // with this Gaussian sigma (px); darkened to this brightness. About 2.6–3.8 levels RMS off.
-    private const val GROUND_COVER_WIDTH = 0.88f
-    private const val GROUND_COVER_CENTRE_Y = 0.1f
-    private const val GROUND_BLUR = 9.1f
-    private const val GROUND_BRIGHTNESS = 0.23f
-
-    /**
-     * How much the ground's colour is pushed from grey, clamped: a pink cover gives a deep crimson
-     * card, not a muddy one, while an orange one, already saturated, can't overshoot. Fitted on
-     * four reference cards with the brightness above.
-     */
+    // The card's ground, fitted by least squares to every background pixel of four reference cards
+    // (pink, teal, orange and white covers), edges included, 3.9–5.6 levels RMS off:
+    // - a black tint of this strength over the screen behind the whole card;
+    // - on it, the cover at this share of the card's width, centred, its middle this far down,
+    //   blurred with this Gaussian sigma (px) together with the empty space around it, so its own
+    //   left and right edges soften into the tint the way the reference's do;
+    // - its colour darkened to this brightness and pushed this far from grey, clamped, so a pink
+    //   cover gives a deep crimson rather than a muddy mauve.
+    private const val TINT_ALPHA = 0.38f
+    private const val GROUND_COVER_WIDTH = 0.902f
+    private const val GROUND_COVER_CENTRE_X = 0.501f
+    private const val GROUND_COVER_CENTRE_Y = 0.05f
+    private const val GROUND_BLUR = 11.5f
+    private const val GROUND_BRIGHTNESS = 0.233f
     private const val GROUND_SATURATION = 2.2f
 
-    /** How much of the cover's colour still reaches the card's very ends, over the screen behind. */
-    private const val EDGE_COLOUR = 0.3f
-
-    /** The tint over the screen behind, where the cover's ground isn't: about half. */
-    private val TINT = Color(0, 0, 0, 128)
+    private val TINT = Color(0f, 0f, 0f, TINT_ALPHA)
 
     /** Transparent room around the card for the slide in from the edge; clicks pass through it. */
     private const val PAD = 28
@@ -128,7 +117,7 @@ internal object DesktopTrackOverlay {
     private class Face(
         val announcement: DesktopTrackToast.Announcement,
         val cover: BufferedImage?,
-        /** The cover blurred over the card, darkened, with its edges feathered away. */
+        /** The cover blurred over the card, toned, with its own soft edges. */
         val glass: BufferedImage?,
         val bar: Color,
     )
@@ -164,17 +153,6 @@ internal object DesktopTrackOverlay {
     private val stayTimer: Timer = Timer(5_000) { hide(release = true) }.apply { isRepeats = false }
 
     @Volatile private var logo: BufferedImage? = null
-
-    /** The cover's ground's alpha over the card, by pixel: fading in from the left, out at the right. */
-    private val groundAlpha: FloatArray by lazy {
-        FloatArray(W * H) { i ->
-            val x = i % W + 0.5f
-            val y = i / W + 0.5f
-            val left = EDGE_COLOUR + (1f - EDGE_COLOUR) * smooth(LEFT_FADE_FROM, LEFT_FADE_TO, x)
-            val right = EDGE_COLOUR + (1f - EDGE_COLOUR) * (1f - smooth(RIGHT_FADE_FROM, RIGHT_FADE_TO, x))
-            min(left, right) * smooth(0f, TOP_FADE, y)
-        }
-    }
 
     init {
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
@@ -527,17 +505,14 @@ internal object DesktopTrackOverlay {
         fade(g, alpha) { g.drawImage(glass, 0, 0, W, H, null) }
     }
 
-    /** No cover: a plain dark ground, faded at both ends the same way. */
+    /** No cover: the same ground from a plain grey square. */
     private val plainGlass: BufferedImage by lazy {
-        val img = BufferedImage(W, H, BufferedImage.TYPE_INT_ARGB)
-        val fade = groundAlpha
-        for (y in 0 until H) {
-            for (x in 0 until W) {
-                val a = (fade[y * W + x] * 255).toInt().coerceIn(0, 255)
-                img.setRGB(x, y, (a shl 24) or 0x141414)
-            }
-        }
-        img
+        val flat = BufferedImage(8, 8, BufferedImage.TYPE_INT_ARGB)
+        val g = flat.createGraphics()
+        g.color = Color(0x5A, 0x5A, 0x5A)
+        g.fillRect(0, 0, 8, 8)
+        g.dispose()
+        coverGlass(flat) ?: BufferedImage(W, H, BufferedImage.TYPE_INT_ARGB)
     }
 
     private fun drawCover(g: Graphics2D, f: Face, alpha: Float) {
@@ -566,7 +541,7 @@ internal object DesktopTrackOverlay {
         val iconS = 12
         val rowW = iconS + 4 + fm.stringWidth(name)
         val rowX = COVER_X + (COVER_S - rowW) / 2
-        val centreY = COVER_Y + COVER_S + 9
+        val centreY = COVER_Y + COVER_S + 10
         fade(g, alpha) {
             val icon = logo
             if (icon != null) {
@@ -586,19 +561,19 @@ internal object DesktopTrackOverlay {
         fade(g, alpha) {
             g.font = Font("Segoe UI", Font.BOLD, 17)
             g.color = Color.WHITE
-            g.drawString(fit(a.song.title, g.fontMetrics, width), TEXT_X, 34)
-            g.font = Font("Segoe UI", Font.PLAIN, 14).deriveFont(14.5f)
+            g.drawString(fit(a.song.title, g.fontMetrics, width), TEXT_X, 35)
+            g.font = Font("Segoe UI", Font.PLAIN, 14)
             g.color = Color(0x91, 0x91, 0x91)
-            g.drawString(fit(a.song.artist, g.fontMetrics, width), TEXT_X, 56)
+            g.drawString(fit(a.song.artist, g.fontMetrics, width), TEXT_X, 55)
         }
     }
 
     private fun drawProgress(g: Graphics2D, position: Long, duration: Long, fraction: Float, bar: Color, alpha: Float) {
-        g.font = Font("Segoe UI", Font.PLAIN, 13)
+        g.font = Font("Segoe UI", Font.PLAIN, 12)
         val fm = g.fontMetrics
         val elapsed = clock(position)
         val total = if (duration > 0L) clock(duration) else "–:––"
-        val rowY = 73f
+        val rowY = 74f
         val baseline = rowY + (fm.ascent - fm.descent) / 2f
         val right = W - RIGHT_PAD
         val totalW = fm.stringWidth(total)
@@ -632,11 +607,6 @@ internal object DesktopTrackOverlay {
     }
 
     private fun ease(t: Float): Float = 1f - (1f - t) * (1f - t) * (1f - t)
-
-    private fun smooth(edge0: Float, edge1: Float, x: Float): Float {
-        val t = ((x - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)
-        return t * t * (3f - 2f * t)
-    }
 
     private fun mix(a: Color, b: Color, t: Float): Color = Color(
         (a.red + (b.red - a.red) * t).toInt().coerceIn(0, 255),
@@ -676,53 +646,53 @@ internal object DesktopTrackOverlay {
     }
 
     /**
-     * The card's ground for this song, fitted to the reference: the cover at nearly the card's
-     * width, centred, its middle just below the card's top edge; blurred with a Gaussian light
-     * enough to keep the cover's broad shapes; darkened to under a quarter; faded at both ends.
+     * The card's ground for this song, as fitted above: the cover placed over the card with empty
+     * space around it, blurred colour and coverage together (premultiplied, so the cover's edges
+     * soften into nothing rather than into black), then toned.
      */
     private fun coverGlass(cover: Image): BufferedImage? = runCatching {
-        val iw = cover.getWidth(null)
-        val ih = cover.getHeight(null)
-        if (iw <= 0 || ih <= 0) return@runCatching null
-        // Worked at full size: the blur is light enough that half size would soften it.
-        val hw = W
-        val hh = H
+        if (cover.getWidth(null) <= 0 || cover.getHeight(null) <= 0) return@runCatching null
         val sigma = GROUND_BLUR
         val m = kotlin.math.ceil(sigma * 3).toInt()
-        val cw = hw + 2 * m
-        val ch = hh + 2 * m
-        val canvas = BufferedImage(cw, ch, BufferedImage.TYPE_INT_RGB)
+        val cw = W + 2 * m
+        val ch = H + 2 * m
+        val canvas = BufferedImage(cw, ch, BufferedImage.TYPE_INT_ARGB_PRE)
         val g = canvas.createGraphics()
         g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
         g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
         val side = (W * GROUND_COVER_WIDTH).toInt()
-        val small = smoothScale(cover, side)
-        // Around the cover, its own average colour, so the blur doesn't pull in black.
-        g.color = averageColour(small)
-        g.fillRect(0, 0, cw, ch)
-        g.drawImage(small, m + (hw - side) / 2, m + (hh * GROUND_COVER_CENTRE_Y).toInt() - side / 2, side, side, null)
+        g.drawImage(
+            smoothScale(cover, side),
+            m + (W * GROUND_COVER_CENTRE_X).toInt() - side / 2,
+            m + (H * GROUND_COVER_CENTRE_Y).toInt() - side / 2,
+            side,
+            side,
+            null,
+        )
         g.dispose()
-        val blurred = gaussian(canvas, sigma)
-        val big = BufferedImage(W, H, BufferedImage.TYPE_INT_RGB)
-        val up = big.createGraphics()
-        up.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
-        up.drawImage(blurred, 0, 0, W, H, m, m, m + hw, m + hh, null)
-        up.dispose()
+        // Premultiplied channels, straight off the raster.
+        val raw = (canvas.raster.dataBuffer as java.awt.image.DataBufferInt).data
+        val a = FloatArray(cw * ch) { ((raw[it] ushr 24) and 0xFF).toFloat() }
+        val r = FloatArray(cw * ch) { ((raw[it] shr 16) and 0xFF).toFloat() }
+        val gr = FloatArray(cw * ch) { ((raw[it] shr 8) and 0xFF).toFloat() }
+        val b = FloatArray(cw * ch) { (raw[it] and 0xFF).toFloat() }
+        val ba = blur(a, cw, ch, sigma)
+        val br = blur(r, cw, ch, sigma)
+        val bg = blur(gr, cw, ch, sigma)
+        val bb = blur(b, cw, ch, sigma)
         val out = BufferedImage(W, H, BufferedImage.TYPE_INT_ARGB)
-        val fade = groundAlpha
         for (y in 0 until H) {
             for (x in 0 until W) {
-                val c = big.getRGB(x, y)
-                val cr = ((c shr 16) and 0xFF).toFloat()
-                val cg = ((c shr 8) and 0xFF).toFloat()
-                val cb = (c and 0xFF).toFloat()
+                val i = (y + m) * cw + (x + m)
+                val alpha = ba[i]
+                if (alpha < 0.5f) continue
+                val cr = br[i] * 255f / alpha
+                val cg = bg[i] * 255f / alpha
+                val cb = bb[i] * 255f / alpha
                 val l = 0.299f * cr + 0.587f * cg + 0.114f * cb
                 fun tone(v: Float) = (GROUND_BRIGHTNESS * (l + GROUND_SATURATION * (v - l))).toInt().coerceIn(0, 255)
-                val r = tone(cr)
-                val gg = tone(cg)
-                val b = tone(cb)
-                val a = (fade[y * W + x] * 255).toInt().coerceIn(0, 255)
-                out.setRGB(x, y, (a shl 24) or (r shl 16) or (gg shl 8) or b)
+                val av = alpha.toInt().coerceIn(0, 255)
+                out.setRGB(x, y, (av shl 24) or (tone(cr) shl 16) or (tone(cg) shl 8) or tone(cb))
             }
         }
         out
@@ -761,26 +731,8 @@ internal object DesktopTrackOverlay {
         return out
     }
 
-    private fun averageColour(image: BufferedImage): Color {
-        var r = 0L
-        var g = 0L
-        var b = 0L
-        val n = image.width.toLong() * image.height
-        for (y in 0 until image.height) {
-            for (x in 0 until image.width) {
-                val c = image.getRGB(x, y)
-                r += (c shr 16) and 0xFF
-                g += (c shr 8) and 0xFF
-                b += c and 0xFF
-            }
-        }
-        return Color((r / n).toInt(), (g / n).toInt(), (b / n).toInt())
-    }
-
-    /** A true Gaussian blur, done as two one-dimensional passes: smooth, with no blocks or bands. */
-    private fun gaussian(src: BufferedImage, sigma: Float): BufferedImage {
-        val w = src.width
-        val h = src.height
+    /** A Gaussian blur of one channel, done as two one-dimensional passes, edges clamped. */
+    private fun blur(channel: FloatArray, w: Int, h: Int, sigma: Float): FloatArray {
         val radius = kotlin.math.ceil(sigma * 3).toInt()
         val kernel = FloatArray(radius * 2 + 1) { i ->
             val d = (i - radius).toFloat()
@@ -788,35 +740,24 @@ internal object DesktopTrackOverlay {
         }
         val total = kernel.sum()
         for (i in kernel.indices) kernel[i] /= total
-        val pixels = src.getRGB(0, 0, w, h, null, 0, w)
-        val r = FloatArray(w * h) { ((pixels[it] shr 16) and 0xFF).toFloat() }
-        val g = FloatArray(w * h) { ((pixels[it] shr 8) and 0xFF).toFloat() }
-        val b = FloatArray(w * h) { (pixels[it] and 0xFF).toFloat() }
-        fun pass(channel: FloatArray, horizontal: Boolean): FloatArray {
-            val out = FloatArray(w * h)
-            for (y in 0 until h) {
-                for (x in 0 until w) {
-                    var sum = 0f
-                    for (k in kernel.indices) {
-                        val o = k - radius
-                        val xx = if (horizontal) (x + o).coerceIn(0, w - 1) else x
-                        val yy = if (horizontal) y else (y + o).coerceIn(0, h - 1)
-                        sum += channel[yy * w + xx] * kernel[k]
-                    }
-                    out[y * w + x] = sum
-                }
+        val across = FloatArray(w * h)
+        for (y in 0 until h) {
+            val row = y * w
+            for (x in 0 until w) {
+                var sum = 0f
+                for (k in kernel.indices) sum += channel[row + (x + k - radius).coerceIn(0, w - 1)] * kernel[k]
+                across[row + x] = sum
             }
-            return out
         }
-        val rr = pass(pass(r, true), false)
-        val gg = pass(pass(g, true), false)
-        val bb = pass(pass(b, true), false)
-        val out = BufferedImage(w, h, BufferedImage.TYPE_INT_RGB)
-        val result = IntArray(w * h) { i ->
-            (rr[i].toInt().coerceIn(0, 255) shl 16) or (gg[i].toInt().coerceIn(0, 255) shl 8) or bb[i].toInt().coerceIn(0, 255)
+        val down = FloatArray(w * h)
+        for (y in 0 until h) {
+            for (x in 0 until w) {
+                var sum = 0f
+                for (k in kernel.indices) sum += across[(y + k - radius).coerceIn(0, h - 1) * w + x] * kernel[k]
+                down[y * w + x] = sum
+            }
         }
-        out.setRGB(0, 0, w, h, result, 0, w)
-        return out
+        return down
     }
 
     /** The app's mark cut out of a white disc. */
