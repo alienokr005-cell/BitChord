@@ -48,9 +48,9 @@ private val GREY_BAR = Color(0xE2, 0xE2, 0xE2)
  * measured frame by frame off a recording of it:
  *
  * - The card is a half-dark tint over whatever is behind it. On that lies the song's own cover,
- *   scaled to the card's width, blurred until only its shapes are left and darkened to a quarter;
- *   it fades in from the card's left edge to the cover, and out at the right under the total time,
- *   so both ends show the screen behind through the tint.
+ *   at nearly the card's width, lightly blurred, darkened and made more saturated, so its colour
+ *   reads deep rather than muddy. It is strongest from the cover to the total time and thins to a
+ *   third at both ends, where the screen behind shows through tinted by the cover's colour.
  * - The cover sits at the top left with the app's mark and name under it; the title, the artist,
  *   and a progress bar between the elapsed and total time sit to its right. The bar is a soft
  *   pastel of the cover's colour.
@@ -91,6 +91,16 @@ internal object DesktopTrackOverlay {
     private const val GROUND_COVER_CENTRE_Y = 0.1f
     private const val GROUND_BLUR = 9.1f
     private const val GROUND_BRIGHTNESS = 0.23f
+
+    /**
+     * How much the ground's colour is pushed from grey, clamped: a pink cover gives a deep crimson
+     * card, not a muddy one, while an orange one, already saturated, can't overshoot. Fitted on
+     * four reference cards with the brightness above.
+     */
+    private const val GROUND_SATURATION = 2.2f
+
+    /** How much of the cover's colour still reaches the card's very ends, over the screen behind. */
+    private const val EDGE_COLOUR = 0.3f
 
     /** The tint over the screen behind, where the cover's ground isn't: about half. */
     private val TINT = Color(0, 0, 0, 128)
@@ -160,7 +170,9 @@ internal object DesktopTrackOverlay {
         FloatArray(W * H) { i ->
             val x = i % W + 0.5f
             val y = i / W + 0.5f
-            smooth(LEFT_FADE_FROM, LEFT_FADE_TO, x) * (1f - smooth(RIGHT_FADE_FROM, RIGHT_FADE_TO, x)) * smooth(0f, TOP_FADE, y)
+            val left = EDGE_COLOUR + (1f - EDGE_COLOUR) * smooth(LEFT_FADE_FROM, LEFT_FADE_TO, x)
+            val right = EDGE_COLOUR + (1f - EDGE_COLOUR) * (1f - smooth(RIGHT_FADE_FROM, RIGHT_FADE_TO, x))
+            min(left, right) * smooth(0f, TOP_FADE, y)
         }
     }
 
@@ -701,9 +713,14 @@ internal object DesktopTrackOverlay {
         for (y in 0 until H) {
             for (x in 0 until W) {
                 val c = big.getRGB(x, y)
-                val r = (((c shr 16) and 0xFF) * GROUND_BRIGHTNESS).toInt()
-                val gg = (((c shr 8) and 0xFF) * GROUND_BRIGHTNESS).toInt()
-                val b = ((c and 0xFF) * GROUND_BRIGHTNESS).toInt()
+                val cr = ((c shr 16) and 0xFF).toFloat()
+                val cg = ((c shr 8) and 0xFF).toFloat()
+                val cb = (c and 0xFF).toFloat()
+                val l = 0.299f * cr + 0.587f * cg + 0.114f * cb
+                fun tone(v: Float) = (GROUND_BRIGHTNESS * (l + GROUND_SATURATION * (v - l))).toInt().coerceIn(0, 255)
+                val r = tone(cr)
+                val gg = tone(cg)
+                val b = tone(cb)
                 val a = (fade[y * W + x] * 255).toInt().coerceIn(0, 255)
                 out.setRGB(x, y, (a shl 24) or (r shl 16) or (gg shl 8) or b)
             }
